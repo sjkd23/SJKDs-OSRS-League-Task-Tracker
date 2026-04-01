@@ -65,9 +65,7 @@ export default function App() {
   const activeFilterCount = useMemo(() => 
     filters.tiers.length +
     filters.skills.length +
-    filters.areas.length +
-    (!filters.showCompleted ? 1 : 0) +
-    (filters.showTodoOnly ? 1 : 0),
+    filters.areas.length,
   [filters]);
 
   /** 

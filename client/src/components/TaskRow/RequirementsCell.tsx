@@ -69,9 +69,9 @@ export function RequirementsCell({ requirementsText, requirementsParts }: Requir
                   <WikiIcon
                     src={parsed[0].iconUrl}
                     alt={parsed[0].skill}
-                    className="w-[20px] h-[20px] self-center"
+                    className="w-[24px] h-[24px] self-center"
                   />
-                  {parsed[0].level > 0 && <span className="ml-1 font-medium">{parsed[0].level}</span>}
+                  {parsed[0].level > 0 && <span className="ml-[3px] font-medium">{parsed[0].level}</span>}
                 </span>
               );
               i += 2;
@@ -92,9 +92,9 @@ export function RequirementsCell({ requirementsText, requirementsParts }: Requir
                   <WikiIcon
                     src={subPart.iconUrl}
                     alt={subPart.skill}
-                    className="w-[20px] h-[20px] self-center"
+                    className="w-[24px] h-[24px] self-center"
                   />
-                  {subPart.level > 0 && <span className="ml-1 font-medium">{subPart.level}</span>}
+                  {subPart.level > 0 && <span className="ml-[3px] font-medium">{subPart.level}</span>}
                 </span>
               );
             }

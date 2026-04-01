@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import type { AppTask, TaskFilters, Tier } from '@/types/task';
 import { uniqueAreas, uniqueSkillsFromRequirements } from '@/utils/taskFilters';
 import { FilterToggleGroup } from './FilterToggleGroup';
@@ -16,29 +17,25 @@ interface TaskFiltersBarProps {
   onChange: (filters: TaskFilters) => void;
 }
 
-export function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps) {
-  const areas = uniqueAreas(tasks);
-  const skills = uniqueSkillsFromRequirements(tasks);
+export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps) {
+  const areas = useMemo(() => uniqueAreas(tasks), [tasks]);
+  const skills = useMemo(() => uniqueSkillsFromRequirements(tasks), [tasks]);
 
   function set<K extends keyof TaskFilters>(key: K, value: TaskFilters[K]) {
     onChange({ ...filters, [key]: value });
   }
 
   function reset() {
-    onChange({ tiers: [], skills: [], areas: [], showCompleted: true, showTodoOnly: false });
+    onChange({ ...filters, tiers: [], skills: [], areas: [] });
   }
 
   const hasActiveFilters =
     filters.tiers.length > 0 ||
     filters.skills.length > 0 ||
-    filters.areas.length > 0 ||
-    !filters.showCompleted ||
-    filters.showTodoOnly;
+    filters.areas.length > 0;
 
   const activeCount =
-    filters.tiers.length + filters.skills.length + filters.areas.length +
-    (!filters.showCompleted ? 1 : 0) +
-    (filters.showTodoOnly ? 1 : 0);
+    filters.tiers.length + filters.skills.length + filters.areas.length;
 
   return (
     <div className="wiki-filter-strip">
@@ -127,7 +124,7 @@ export function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps
               <WikiIcon
                 src={iconPath ?? ''}
                 alt={skill}
-                className="w-[23px] h-[23px] flex-shrink-0"
+                className="w-[28px] h-[28px] flex-shrink-0"
                 fallbackColor={SKILL_FALLBACK_COLOUR}
               />
             );
@@ -160,4 +157,4 @@ export function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps
       </div>
     </div>
   );
-}
+});

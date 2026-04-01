@@ -20,9 +20,9 @@ interface Column {
 // All columns are sortable; clicking any header cycles asc/desc.
 const COLUMNS: Column[] = [
   { label: 'Area',         field: 'area',              className: 'w-16 text-center' },
-  { label: 'Name',         field: 'name',              className: 'w-80' },
+  { label: 'Name',         field: 'name',              className: '' },
   { label: 'Task',         field: 'description',       className: '' },
-  { label: 'Requirements', field: 'skill',             className: 'w-[21rem]' },
+  { label: 'Requirements', field: 'skill',             className: '' },
   { label: 'Pts',          field: 'points',            className: 'w-20 text-center' },
   { label: 'Compl. %',     field: 'completionPercent', className: 'w-[7rem] text-center' },
   { label: 'To-do',        field: 'isTodo',            className: 'w-20 text-center' },

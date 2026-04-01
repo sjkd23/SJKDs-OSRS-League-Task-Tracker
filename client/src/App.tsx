@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { useTaskStore } from '@/state/useTaskStore';
 import { useTheme } from '@/hooks/useTheme';
 import { TaskTable } from '@/components/TaskTable/TaskTable';
@@ -7,18 +7,41 @@ import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import type { SortField } from '@/types/task';
 
+// Memoize TaskTable to prevent rerenders when только showFilters changes
+const MemoizedTaskTable = memo(TaskTable);
+
 export default function App() {
   const { loading, tasks, visibleTasks, filters, sort, setFilters, setSort, toggleCompleted, toggleTodo } =
     useTaskStore();
   const { theme, toggleTheme } = useTheme();
+  
+  // ── Interaction State ───────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
+  
+  // We use a ref and an effect instead of synchronous measurement (useLayoutEffect)
+  // to avoid blocking the first paint after a click.
+  const filterPanelRef = useRef<HTMLDivElement>(null);
   const [stickyFilterHeight, setStickyFilterHeight] = useState(0);
+
+  // Measure height in useEffect (after paint) instead of useLayoutEffect (blocking paint)
+  useEffect(() => {
+    if (showFilters && isScrolled && filterPanelRef.current) {
+      // Small delay to ensure the panel has actually expanded/painted if using transition,
+      // though here we use block/hidden toggle.
+      const height = filterPanelRef.current.offsetHeight;
+      if (height !== stickyFilterHeight) {
+        setStickyFilterHeight(height);
+      }
+    } else {
+      if (stickyFilterHeight !== 0) {
+        setStickyFilterHeight(0);
+      }
+    }
+  }, [showFilters, isScrolled, stickyFilterHeight]);
 
   useEffect(() => {
     const handleScroll = () => {
-      // Threshold: Once the top filter bar is mostly scrolled out of view.
-      // Roughly 300px should suffice for most screen sizes.
       setIsScrolled(window.scrollY > 300);
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -32,12 +55,29 @@ export default function App() {
     });
   }
 
-  const activeFilterCount =
+  const activeFilterCount = useMemo(() => 
     filters.tiers.length +
     filters.skills.length +
     filters.areas.length +
     (!filters.showCompleted ? 1 : 0) +
-    (filters.showTodoOnly ? 1 : 0);
+    (filters.showTodoOnly ? 1 : 0),
+  [filters]);
+
+  // Derive the offset for the sticky table headers
+  const stickyTableHeaderOffset = useMemo(() => 
+    isScrolled 
+      ? `calc(3rem + ${stickyFilterHeight}px)` 
+      : '0px',
+  [isScrolled, stickyFilterHeight]);
+
+  /** 
+   * CRITICAL FIX: 
+   * Instead of just toggling showFilters and letting the whole App rerender,
+   * we want the UI thread to prioritize the visibility change.
+   */
+  const handleToggleFilters = () => {
+    setShowFilters(prev => !prev);
+  };
 
   return (
     <div 
@@ -46,14 +86,14 @@ export default function App() {
       
       {/* ── Top Utility Layer ────────────────────────────────────────────── */}
       <div 
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-100 ${
+        className={`fixed top-0 left-0 right-0 z-50 transition-transform duration-100 ${
           isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none invisible'
         }`}
       >
         {/* Utility Bar */}
         <div 
-          onClick={() => setShowFilters(!showFilters)}
-          className="wiki-article !py-0 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm flex justify-between items-center h-12 px-4 shadow-sm cursor-pointer select-none group transition-colors hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark"
+          onClick={handleToggleFilters}
+          className="wiki-article !py-0 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm flex justify-between items-center h-12 px-4 shadow-sm cursor-pointer select-none group hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark"
           aria-expanded={showFilters}
           aria-label="Toggle filters"
           role="button"
@@ -61,7 +101,7 @@ export default function App() {
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              setShowFilters(!showFilters);
+              handleToggleFilters();
             }
           }}
         >
@@ -73,7 +113,7 @@ export default function App() {
                 width="14" height="14" 
                 viewBox="0 0 24 24" 
                 fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                className={`transition-transform duration-100 ${showFilters ? 'rotate-180' : ''}`}
+                className={showFilters ? 'rotate-180' : ''}
               >
                 <path d="m6 9 6 6 6-6"/>
               </svg>
@@ -90,7 +130,7 @@ export default function App() {
               e.stopPropagation();
               window.scrollTo({ top: 0, behavior: 'instant' });
             }}
-            className="w-10 h-10 flex items-center justify-center text-wiki-text dark:text-wiki-text-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark rounded-full border border-transparent hover:border-wiki-border dark:hover:border-wiki-border-dark transition-all hover:scale-110 active:scale-95 pointer-events-auto"
+            className="w-10 h-10 flex items-center justify-center text-wiki-text dark:text-wiki-text-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark rounded-full border border-transparent hover:border-wiki-border dark:hover:border-wiki-border-dark transition-transform hover:scale-110 active:scale-95 pointer-events-auto"
             title="Scroll to top"
             aria-label="Scroll to top"
           >
@@ -102,15 +142,9 @@ export default function App() {
 
         {/* Sticky Filters Panel */}
         <div
-          ref={(el) => {
-            if (el && showFilters && isScrolled) {
-              setStickyFilterHeight(el.offsetHeight);
-            } else if (el && !showFilters) {
-              setStickyFilterHeight(0);
-            }
-          }}
-          className={`wiki-article !mt-0 !py-2 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm shadow-md overflow-y-auto max-h-[70vh] pointer-events-auto transition-[max-height,opacity,padding] duration-75 ease-out ${
-            showFilters ? 'max-h-[70vh] opacity-100 py-2' : 'max-h-0 opacity-0 py-0 overflow-hidden border-none'
+          ref={filterPanelRef}
+          className={`wiki-article !mt-0 px-4 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm shadow-md overflow-y-auto max-h-[70vh] pointer-events-auto filter-panel-transition ${
+            showFilters ? 'expanded py-2' : 'collapsed'
           }`}
         >
           <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} />
@@ -155,17 +189,13 @@ export default function App() {
               Loading task list…
             </div>
           ) : (
-            <TaskTable
+            <MemoizedTaskTable
               tasks={visibleTasks}
               sort={sort}
               onSortChange={handleSortChange}
               onToggleCompleted={toggleCompleted}
               onToggleTodo={toggleTodo}
-              stickyOffset={
-                isScrolled 
-                  ? `calc(3rem + ${stickyFilterHeight}px)` 
-                  : '0px'
-              }
+              stickyOffset={stickyTableHeaderOffset}
             />
           )}
         </main>

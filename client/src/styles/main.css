@@ -196,3 +196,28 @@
     display: inline;
   }
 }
+
+/* ── Filter Transition ────────────────────────────────────────────────── */
+.filter-panel-transition {
+  transition: max-height 0.25s ease-in-out, opacity 0.2s ease-in-out, padding 0.25s ease-in-out;
+  overflow-y: hidden;
+}
+
+.filter-panel-transition.collapsed {
+  max-height: 0 !important;
+  opacity: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  pointer-events: none;
+}
+
+.filter-panel-transition.expanded {
+  max-height: 800px;
+  opacity: 1 !important;
+}
+
+/* ── Shared Header Transition ────────────────────────────────────────── */
+/* Allows sticky headers to slide smoothly when the filter panel expands. */
+.wikitable thead th.sticky {
+  transition: top 0.25s ease-in-out;
+}

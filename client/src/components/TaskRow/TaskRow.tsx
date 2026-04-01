@@ -12,7 +12,7 @@ import {
 } from '@/lib/wikiIcons';
 
 // Colored text for each difficulty tier — no badges, just inline text
-const TIER_COLOURS: Record<string, string> = {
+export const TIER_COLOURS: Record<string, string> = {
   Easy:   'text-difficulty-easy',
   Medium: 'text-difficulty-medium',
   Hard:   'text-difficulty-hard',
@@ -21,7 +21,7 @@ const TIER_COLOURS: Record<string, string> = {
 };
 
 /** Maps a completionPercent value to a background + text colour class pair. */
-function completionTierClass(pct: number): string {
+export function completionTierClass(pct: number): string {
   if (pct >= 50)   return 'bg-[#b8e4f0] text-[#0e5a72] dark:bg-[#0e4a60] dark:text-[#7fd4ec]'; // cyan/blue
   if (pct >= 10)   return 'bg-[#b8e8b8] text-[#2a6b2a] dark:bg-[#1a4a1a] dark:text-[#7acc7a]'; // green
   if (pct >= 1)    return 'bg-[#f5e080] text-[#6b5000] dark:bg-[#4a3800] dark:text-[#d4b84a]'; // yellow
@@ -29,7 +29,7 @@ function completionTierClass(pct: number): string {
   return                  'bg-[#f5a0a0] text-[#7a1a1a] dark:bg-[#4a1010] dark:text-[#d47070]'; // red
 }
 
-interface TaskRowProps {
+export interface TaskRowProps {
   task: TaskView;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;

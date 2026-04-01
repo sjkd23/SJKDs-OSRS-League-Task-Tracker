@@ -190,6 +190,21 @@
     @apply hover:border-wiki-link-hover dark:hover:border-wiki-link-hover-dark;
   }
 
+  /* ── Mobile Filter Sheet Overrides ─────────────────────────────────────── */
+  /* Make touch targets significantly larger inside the mobile filter sheet.   */
+  .mobile-filter-sheet-content .filter-toggle-btn {
+    @apply py-2 px-3 text-[14px];
+  }
+  .mobile-filter-sheet-content .wiki-filter-strip {
+    @apply bg-transparent border-none p-0;
+  }
+  .mobile-filter-sheet-content label {
+    @apply py-2;
+  }
+  .mobile-filter-sheet-content label input[type="checkbox"] {
+    @apply w-5 h-5;
+  }
+
   /* ── Rich Text Spacing Fix ─────────────────────────────────────────────── */
   /* Ensures that whitespace between span and a tags is preserved in the DOM. */
   .rich-text-container {
@@ -220,4 +235,10 @@
 /* Allows sticky headers to slide smoothly when the filter panel expands. */
 .wikitable thead th.sticky {
   transition: top 0.25s ease-in-out;
+}
+
+/* ── Scroll Lock for Mobile Sheets ────────────────────────────────────── */
+html.scroll-lock, body.scroll-lock {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
 }

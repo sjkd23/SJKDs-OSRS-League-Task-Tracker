@@ -56,7 +56,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
                 e.stopPropagation();
                 reset();
               }}
-              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold"
+              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold py-2 px-1 -mr-1"
             >
               Reset
             </button>

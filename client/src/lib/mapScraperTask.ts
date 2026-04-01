@@ -68,13 +68,18 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     completionPercent: raw.completionPercent ?? 0,
     skills: skillStrings,
     wikiNotes: cleanWikiGarbage(raw.wikiNotes ?? ''),
-    requirementsText: cleanWikiGarbage(requirementsText),
+    requirementsText: cleanWikiGarbage(requirementsText).trim(),
     ptsLabel: `${tier} – ${points}`,
     wikiUrl: raw.wikiUrl,
     // ── Rich-text parts: passed through as-is; optional / may be absent ──
     nameParts: raw.nameParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
     descriptionParts: raw.descriptionParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
-    requirementsParts: raw.requirementsParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
+    requirementsParts: raw.requirementsParts?.map((p) => {
+      // Clean garbage but preserve spaces within parts.
+      // We only trim newlines from the very ends of the parts array if they are just "\n"
+      let text = cleanWikiGarbage(p.text);
+      return { ...p, text };
+    }),
   };
 }
 

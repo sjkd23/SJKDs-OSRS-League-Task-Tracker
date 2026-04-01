@@ -36,7 +36,7 @@ interface RichTextProps {
  */
 export function RichText({ parts, className }: RichTextProps) {
   return (
-    <span className={[className, 'rich-text-container'].join(' ')}>
+    <span className={[className, 'rich-text-container whitespace-pre-wrap'].join(' ')}>
       {parts.map((part, i) => {
         const isLink = part.type === 'link';
         

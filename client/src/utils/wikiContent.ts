@@ -38,5 +38,5 @@ export function cleanWikiGarbage(text: string): string {
   // (e.g. [[File:Pixel.png|link=]])
   cleaned = cleaned.replace(/\[\[File:.*?\]\]/g, '');
 
-  return cleaned.trim();
+  return cleaned;
 }

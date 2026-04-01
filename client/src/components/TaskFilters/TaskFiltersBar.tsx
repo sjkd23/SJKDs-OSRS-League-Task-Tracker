@@ -44,21 +44,24 @@ export function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps
     <div className="wiki-filter-strip">
       {/* Strip header row */}
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="font-semibold text-[12px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide">
+        <span className="font-semibold text-[13px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide">
           Filter
         </span>
         <div className="flex items-center gap-3">
           {hasActiveFilters && (
-            <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark">
+            <span className="text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark">
               {activeCount} filter{activeCount !== 1 ? 's' : ''} active
             </span>
           )}
           {hasActiveFilters && (
             <button
-              onClick={reset}
-              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[12px]"
+              onClick={(e) => {
+                e.stopPropagation();
+                reset();
+              }}
+              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold"
             >
-              reset
+              Reset
             </button>
           )}
         </div>
@@ -132,23 +135,23 @@ export function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps
         />
 
         {/* Utility row */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 border-t border-wiki-border dark:border-wiki-border-dark">
-          <label className="flex items-center gap-1 cursor-pointer select-none text-[12px] text-wiki-text dark:text-wiki-text-dark">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-wiki-border dark:border-wiki-border-dark">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
             <input
               type="checkbox"
               checked={filters.showCompleted}
               onChange={(e) => set('showCompleted', e.target.checked)}
-              className="w-3.5 h-3.5 accent-wiki-link dark:accent-wiki-link-dark"
+              className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
             />
             Show completed
           </label>
 
-          <label className="flex items-center gap-1 cursor-pointer select-none text-[12px] text-wiki-text dark:text-wiki-text-dark">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
             <input
               type="checkbox"
               checked={filters.showTodoOnly}
               onChange={(e) => set('showTodoOnly', e.target.checked)}
-              className="w-3.5 h-3.5 accent-wiki-link dark:accent-wiki-link-dark"
+              className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
             />
             To-do only
           </label>

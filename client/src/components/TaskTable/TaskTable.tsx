@@ -28,18 +28,28 @@ const COLUMNS: Column[] = [
   { label: 'To-do',        field: 'isTodo',            className: 'w-20 text-center' },
 ];
 
+interface TaskTableProps {
+  tasks: TaskView[];
+  sort: SortConfig;
+  onSortChange: (field: SortField) => void;
+  onToggleCompleted: (id: string) => void;
+  onToggleTodo: (id: string) => void;
+  stickyOffset?: string;
+}
+
 export function TaskTable({
   tasks,
   sort,
   onSortChange,
   onToggleCompleted,
   onToggleTodo,
+  stickyOffset = '0px',
 }: TaskTableProps) {
   return (
     <div>
       {/* wikitable: border-collapse, 1 px cell borders, no shadow/radius */}
       {/* table-fixed: enforces column widths defined on <th> elements, prevents overflow */}
-      <table className="wikitable table-fixed">
+      <table className="wikitable table-fixed border-separate border-spacing-0">
         <thead>
           <tr>
             {COLUMNS.map(({ label, field, className }) => {
@@ -48,15 +58,17 @@ export function TaskTable({
                 <th
                   key={label}
                   onClick={() => onSortChange(field)}
+                  style={{ top: stickyOffset }}
                   className={[
-                    'px-2 py-1 font-semibold whitespace-nowrap text-center',
+                    'sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark shadow-[0_1px_0_rgba(0,0,0,0.05)]',
+                    'px-2 py-2 font-semibold whitespace-nowrap text-center transition-colors',
                     'cursor-pointer select-none hover:text-wiki-link dark:hover:text-wiki-link-dark',
                     className ?? '',
                   ].join(' ')}
                 >
                   {label}
                   {isSorted && (
-                    <span className="ml-0.5 text-[10px] opacity-70">
+                    <span className="ml-1 text-[10px] opacity-70">
                       {sort.direction === 'asc' ? '▲' : '▼'}
                     </span>
                   )}

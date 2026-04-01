@@ -43,8 +43,10 @@
   .wiki-article {
     @apply bg-wiki-article dark:bg-wiki-article-dark;
     @apply border border-wiki-border dark:border-wiki-border-dark;
-    /* ~95% of viewport width, capped at a generous max for ultra-wide screens */
-    width: min(95vw, 1920px);
+    /* Proportional width for 1080p and 1440p+ (roughly 80% on 1920px is ~1536px, 
+       but user requested proportional feel, so we use a wide-ish max and a percentage). */
+    width: min(95vw, 85%);
+    max-width: 2000px;
     margin-left: auto;
     margin-right: auto;
     padding: 0 1.5rem 2.5rem;
@@ -92,10 +94,6 @@
 
   .wikitable thead tr {
     @apply bg-wiki-table-header dark:bg-wiki-table-header-dark;
-    /* Sticky header: stays visible when scrolling tall task lists */
-    position: sticky;
-    top: 0;
-    z-index: 10;
   }
 
   .wikitable thead th {

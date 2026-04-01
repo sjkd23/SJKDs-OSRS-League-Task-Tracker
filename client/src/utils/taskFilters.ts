@@ -36,9 +36,50 @@ export function sortTasks(tasks: TaskView[], sort: SortConfig): TaskView[] {
       case 'tier':
         cmp = (TIER_ORDER[a.tier] ?? 0) - (TIER_ORDER[b.tier] ?? 0);
         break;
-      case 'skill':
-        cmp = a.skill.localeCompare(b.skill);
+      case 'skill': {
+        // Requirements sorting:
+        // 1. Group N/A-like values last.
+        // 2. Sort by FIRST skill name alphabetically.
+        // 3. Then by that skill's required level.
+        // 4. Fallback to raw text if no skills.
+        
+        const reqA = a.requirementsText.trim();
+        const reqB = b.requirementsText.trim();
+        const isNA_A = !reqA || reqA === '—' || reqA.toLowerCase() === 'n/a';
+        const isNA_B = !reqB || reqB === '—' || reqB.toLowerCase() === 'n/a';
+
+        if (isNA_A && isNA_B) {
+          cmp = 0;
+        } else if (isNA_A) {
+          cmp = 1;
+        } else if (isNA_B) {
+          cmp = -1;
+        } else {
+          // Both have requirements. Try to extract skill + level.
+          // a.skills looks like ["Farming 70", "Magic 70"]
+          const skillA = a.skills[0] || '';
+          const skillB = b.skills[0] || '';
+
+          if (skillA && skillB) {
+            const nameA = skillNameFromString(skillA);
+            const nameB = skillNameFromString(skillB);
+            
+            cmp = nameA.localeCompare(nameB);
+            if (cmp === 0) {
+              const levelA = parseInt(skillA.match(/\d+$/)?.[0] || '0', 10);
+              const levelB = parseInt(skillB.match(/\d+$/)?.[0] || '0', 10);
+              cmp = levelA - levelB;
+            }
+          } else if (skillA) {
+            cmp = -1;
+          } else if (skillB) {
+            cmp = 1;
+          } else {
+            cmp = reqA.localeCompare(reqB);
+          }
+        }
         break;
+      }
       case 'area':
         cmp = a.area.localeCompare(b.area);
         break;

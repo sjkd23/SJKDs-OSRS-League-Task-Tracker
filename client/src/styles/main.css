@@ -1,0 +1,185 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── OSRS Wiki base overrides ──────────────────────────────────────────────── */
+@layer base {
+  html {
+    /* 14 px base — slightly larger than the OSRS Wiki's compact 13px for better
+       readability at desktop widths. Dense tables remain legible. */
+    font-size: 14px;
+  }
+
+  body {
+    @apply bg-wiki-bg dark:bg-wiki-bg-dark text-wiki-text dark:text-wiki-text-dark;
+    @apply font-wiki leading-[1.4];
+  }
+
+  /* Wiki-style links: blue, no decoration by default, underline on hover */
+  a {
+    @apply text-wiki-link dark:text-wiki-link-dark;
+    text-decoration: none;
+  }
+  a:hover {
+    @apply text-wiki-link-hover dark:text-wiki-link-hover-dark;
+    text-decoration: underline;
+  }
+
+  /* Native select/checkbox should respect the page palette */
+  select {
+    color-scheme: light;
+  }
+  .dark select {
+    color-scheme: dark;
+  }
+}
+
+/* ─── Layout components ─────────────────────────────────────────────────────── */
+@layer components {
+
+  /* ── Wiki article container ─────────────────────────────────────────────── */
+  /* Distinct parchment surface floating above the tan page background.        */
+  /* Visually reads like a wiki content block / article body.                  */
+  .wiki-article {
+    @apply bg-wiki-article dark:bg-wiki-article-dark;
+    @apply border border-wiki-border dark:border-wiki-border-dark;
+    /* ~95% of viewport width, capped at a generous max for ultra-wide screens */
+    width: min(95vw, 1920px);
+    margin-left: auto;
+    margin-right: auto;
+    padding: 0 1.5rem 2.5rem;
+  }
+
+  /* ── Page title ─────────────────────────────────────────────────────────── */
+  .wiki-page-title {
+    @apply font-wiki-heading text-[2rem] font-normal leading-tight;
+    @apply text-wiki-text dark:text-wiki-text-dark;
+  }
+
+  /* ── Filter control strip ───────────────────────────────────────────────── */
+  /* Boxed surface inset in the article, housing all filter controls.          */
+  .wiki-filter-strip {
+    @apply bg-wiki-surface dark:bg-wiki-surface-dark;
+    @apply border border-wiki-border dark:border-wiki-border-dark;
+    @apply px-3 py-2;
+  }
+
+  /* ── Wiki-table ─────────────────────────────────────────────────────────── */
+  /* border-collapse table with OSRS Wiki cell borders and surfaces.           */
+  .wikitable {
+    @apply w-full border-collapse border border-wiki-border dark:border-wiki-border-dark;
+    font-size: 14px;
+    /* Medium weight gives the slightly darker/heavier ink feel of the OSRS Wiki */
+    font-weight: 500;
+  }
+
+  .wikitable th,
+  .wikitable td {
+    @apply border border-wiki-border dark:border-wiki-border-dark;
+    @apply px-2 py-1;
+    vertical-align: middle;
+  }
+
+  /* Data cells default to left-aligned; header alignment is controlled
+     per-column via Tailwind utility classes on the <th> element. */
+  .wikitable td {
+    @apply text-left;
+  }
+
+  .wikitable th {
+    @apply text-center;
+  }
+
+  .wikitable thead tr {
+    @apply bg-wiki-table-header dark:bg-wiki-table-header-dark;
+    /* Sticky header: stays visible when scrolling tall task lists */
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .wikitable thead th {
+    @apply font-semibold whitespace-nowrap text-wiki-text dark:text-wiki-text-dark;
+  }
+
+  .wikitable tbody tr:nth-child(odd) {
+    @apply bg-wiki-table-row-alt dark:bg-wiki-table-row-alt-dark;
+  }
+
+  .wikitable tbody tr:nth-child(even) {
+    @apply bg-wiki-table-bg dark:bg-wiki-table-bg-dark;
+  }
+
+  /* Hover: subtle darkening in light, subtle brightening in dark */
+  .wikitable tbody tr:hover {
+    filter: brightness(0.96);
+  }
+  .dark .wikitable tbody tr:hover {
+    filter: brightness(1.12);
+  }
+
+  /* ── Completed row ─────────────────────────────────────────────────────── */
+  /* Overrides the nth-child alternating rows with a soft green tint.         */
+  /* !important needed here to beat Tailwind's specificity on nth-child.      */
+  .wikitable tbody tr.task-completed {
+    background-color: #c8e8c8 !important;
+    color: #4a6b4a;
+    filter: none !important;
+  }
+  .dark .wikitable tbody tr.task-completed {
+    background-color: #182b18 !important;
+    color: #7aaa7a;
+    filter: none !important;
+  }
+  .wikitable tbody tr.task-completed td {
+    /* Slightly muted but still clearly readable */
+    opacity: 0.80;
+  }
+  .wikitable tbody tr.task-completed:hover {
+    background-color: #b8ddb8 !important;
+    opacity: 1;
+  }
+  .dark .wikitable tbody tr.task-completed:hover {
+    background-color: #1e3620 !important;
+    opacity: 1;
+  }
+  /* Incomplete rows: green-tinted hover on the whole clickable row */
+  .wikitable tbody tr.task-completable:hover {
+    filter: none !important;
+    background-color: #dff0df !important;
+  }
+  .dark .wikitable tbody tr.task-completable:hover {
+    filter: none !important;
+    background-color: #1a2d1e !important;
+  }
+
+  /* ── N/A requirements cell ──────────────────────────────────────────────── */
+  /* Fixed pale beige that overrides the alternating row pattern so every    */
+  /* N/A cell looks identical regardless of odd/even position in the table.  */
+  .req-na-cell {
+    background-color: #ebe5d6 !important;
+  }
+  .dark .req-na-cell {
+    background-color: #1f2d46 !important;
+  }
+
+  /* ── Filter toggle buttons ─────────────────────────────────────────────── */
+  /* Used by FilterToggleGroup: compact wiki-style toggle button.             */
+  .filter-toggle-btn {
+    @apply inline-flex items-center gap-1;
+    @apply border border-wiki-border dark:border-wiki-border-dark;
+    @apply bg-wiki-surface dark:bg-wiki-surface-dark;
+    @apply text-wiki-text dark:text-wiki-text-dark;
+    @apply px-[6px] py-[2px] text-[12px] leading-snug;
+    @apply cursor-pointer select-none transition-colors;
+    @apply hover:border-wiki-link dark:hover:border-wiki-link-dark;
+    @apply hover:text-wiki-link dark:hover:text-wiki-link-dark;
+  }
+
+  .filter-toggle-btn--active {
+    @apply border-wiki-link dark:border-wiki-link-dark;
+    @apply bg-wiki-link dark:bg-wiki-link-dark;
+    @apply text-white;
+    @apply hover:border-wiki-link-hover dark:hover:border-wiki-link-hover-dark;
+  }
+}

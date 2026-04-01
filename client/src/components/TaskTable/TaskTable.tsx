@@ -44,7 +44,7 @@ export function TaskTable({
   onToggleTodo,
 }: TaskTableProps) {
   return (
-    <div className="w-full overflow-x-auto relative">
+    <div className="w-full relative">
       {/* wikitable: border-collapse, 1 px cell borders, no shadow/radius */}
       {/* table-fixed: enforces column widths defined on <th> elements, prevents overflow */}
       <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px]">

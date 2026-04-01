@@ -19,6 +19,7 @@ export function filterTasks(tasks: TaskView[], filters: TaskFilters): TaskView[]
       if (!filters.skills.some((s) => taskSkillNames.includes(s))) return false;
     }
     if (filters.areas.length > 0 && !filters.areas.includes(task.area)) return false;
+    if (filters.showOnlyCompleted && !task.completed) return false;
     if (!filters.showCompleted && task.completed) return false;
     if (filters.showTodoOnly && !task.isTodo) return false;
     return true;

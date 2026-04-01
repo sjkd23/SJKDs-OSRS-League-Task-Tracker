@@ -137,10 +137,28 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
             <input
               type="checkbox"
               checked={filters.showCompleted}
+              disabled={filters.showOnlyCompleted}
               onChange={(e) => set('showCompleted', e.target.checked)}
+              className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <span className={filters.showOnlyCompleted ? 'opacity-50' : ''}>Show completed</span>
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+            <input
+              type="checkbox"
+              checked={filters.showOnlyCompleted}
+              onChange={(e) => {
+                const isChecked = e.target.checked;
+                const nextFilters = { ...filters, showOnlyCompleted: isChecked };
+                if (isChecked) {
+                  nextFilters.showCompleted = true; // Automatically enable "Show completed"
+                }
+                onChange(nextFilters);
+              }}
               className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
             />
-            Show completed
+            Show only completed
           </label>
 
           <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">

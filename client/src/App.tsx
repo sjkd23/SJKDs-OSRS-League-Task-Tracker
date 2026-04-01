@@ -24,18 +24,17 @@ export default function App() {
   const [showFilters, setShowFilters] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
   
-  // We use a ref and an effect instead of synchronous measurement (useLayoutEffect)
-  // to avoid blocking the first paint after a click.
-  const filterPanelRef = useRef<HTMLDivElement>(null);
+  // We use a ref to track the entire sticky header container's height
+  const headerRef = useRef<HTMLDivElement>(null);
   
-  // Use a ResizeObserver to keep the sticky offset updated without triggering React rerenders
+  // Use a ResizeObserver to keep the sticky offset updated perfectly
   useEffect(() => {
     const root = document.documentElement;
-    const panel = filterPanelRef.current;
+    const header = headerRef.current;
     
     function updateOffset() {
-      if (showFilters && isScrolled && panel) {
-        root.style.setProperty('--sticky-offset', `calc(3rem + ${panel.offsetHeight}px)`);
+      if (isScrolled && header) {
+        root.style.setProperty('--sticky-offset', `${header.getBoundingClientRect().height}px`);
       } else {
         root.style.setProperty('--sticky-offset', isScrolled ? '3rem' : '0px');
       }
@@ -43,14 +42,14 @@ export default function App() {
 
     updateOffset();
     
-    if (!panel) return;
+    if (!header) return;
     const observer = new ResizeObserver(() => updateOffset());
-    observer.observe(panel);
+    observer.observe(header);
     
     return () => {
       observer.disconnect();
     };
-  }, [showFilters, isScrolled]);
+  }, [showFilters, isScrolled, layoutMode]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -89,7 +88,8 @@ export default function App() {
       
       {/* ── Top Utility Layer (Desktop/Tablet Only) ─────────────────────── */}
       {layoutMode !== 'mobile' && (
-        <div 
+        <div
+          ref={headerRef}
           className={`fixed top-0 left-0 right-0 z-50 transition-transform duration-100 ${
             isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none invisible'
           }`}
@@ -146,7 +146,6 @@ export default function App() {
 
           {/* Sticky Filters Panel */}
           <div
-            ref={filterPanelRef}
             className={`wiki-article !mt-0 px-4 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm shadow-md overflow-y-auto max-h-[70vh] pointer-events-auto filter-panel-transition ${
               showFilters ? 'expanded py-2' : 'collapsed'
             }`}
@@ -160,9 +159,12 @@ export default function App() {
       <div className="wiki-article">
 
         {/* ── Heading row ────────────────────────────────────────────────── */}
-        <div className="pt-4 pb-3 flex items-start justify-between gap-4 border-b border-wiki-border dark:border-wiki-border-dark">
-          <div>
-            <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} League — Tasks</h1>
+        <div className="pt-4 pb-3 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-wiki-border dark:border-wiki-border-dark">
+          <div className="flex-1">
+            <div className="text-[13px] font-semibold text-wiki-muted dark:text-wiki-muted-dark mb-1">
+              SJKD's Wiki-Style Leagues Task Tracker
+            </div>
+            <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} League - Tasks</h1>
             <p className="mt-1 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
               {loading ? (
                 <span>Loading tasks…</span>
@@ -177,8 +179,30 @@ export default function App() {
               )}
             </p>
           </div>
-          <div className="pt-1 flex-shrink-0">
-            <ThemeToggle theme={theme} onToggle={toggleTheme} />
+          <div className="flex flex-row items-center justify-between md:flex-col md:items-end gap-3 flex-shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-0 border-wiki-border dark:border-wiki-border-dark mt-2 md:mt-0">
+            <div className="text-[11px] leading-tight text-wiki-muted dark:text-wiki-muted-dark text-left md:text-right">
+              <div>
+                Created by{' '}
+                <a href="https://github.com/sjkd23/SJKDs-OSRS-League-Task-Tracker" target="_blank" rel="noreferrer" className="text-wiki-link dark:text-wiki-link-dark hover:underline font-semibold">
+                  SJKD
+                </a>
+              </div>
+              <div className="mt-0.5">
+                Using modified{' '}
+                <a href="https://github.com/syrifgit/full-task-scraper" target="_blank" rel="noreferrer" className="text-wiki-link dark:text-wiki-link-dark hover:underline">
+                  task scraper
+                </a>
+              </div>
+              <div className="mt-0.5">
+                Powered by the{' '}
+                <a href="https://oldschool.runescape.wiki/" target="_blank" rel="noreferrer" className="text-wiki-link dark:text-wiki-link-dark hover:underline font-semibold">
+                  OSRS Wiki
+                </a>
+              </div>
+            </div>
+            <div className="flex-shrink-0 md:mt-1">
+              <ThemeToggle theme={theme} onToggle={toggleTheme} />
+            </div>
           </div>
         </div>
 

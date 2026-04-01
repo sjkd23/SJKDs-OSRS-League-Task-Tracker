@@ -122,6 +122,7 @@ export interface TaskFilters {
   /** Selected area/region names — empty array means "all" */
   areas: string[];
   showCompleted: boolean;
+  showOnlyCompleted: boolean;
   showTodoOnly: boolean;
 }
 

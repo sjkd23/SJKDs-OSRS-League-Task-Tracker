@@ -223,8 +223,9 @@
   opacity: 0 !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
-  pointer-events: none;
-}
+    border-width: 0 !important;
+    pointer-events: none;
+  }
 
 .filter-panel-transition.expanded {
   max-height: 800px;
@@ -234,10 +235,10 @@
 /* ── Shared Header Transition ────────────────────────────────────────── */
 /* Allows sticky headers to slide smoothly when the filter panel expands. */
 .wikitable thead th.sticky {
-  transition: top 0.25s ease-in-out;
+  /* transition: top 0.25s ease-in-out; */
 }
 
-/* ── Scroll Lock for Mobile Sheets ────────────────────────────────────── */
+/* ── Scroll Lock for Mobile Sheets ─────────────────────────────────────── */
 html.scroll-lock, body.scroll-lock {
   overflow: hidden !important;
   overscroll-behavior: none !important;

@@ -65,6 +65,7 @@ const DEFAULT_FILTERS: TaskFilters = {
   skills: [],
   areas: [],
   showCompleted: true,
+  showOnlyCompleted: false,
   showTodoOnly: false,
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { useTaskStore } from '@/state/useTaskStore';
 import { useTheme } from '@/hooks/useTheme';
 import { TaskTable } from '@/components/TaskTable/TaskTable';
@@ -22,23 +22,30 @@ export default function App() {
   // We use a ref and an effect instead of synchronous measurement (useLayoutEffect)
   // to avoid blocking the first paint after a click.
   const filterPanelRef = useRef<HTMLDivElement>(null);
-  const [stickyFilterHeight, setStickyFilterHeight] = useState(0);
-
-  // Measure height in useEffect (after paint) instead of useLayoutEffect (blocking paint)
+  
+  // Use a ResizeObserver to keep the sticky offset updated without triggering React rerenders
   useEffect(() => {
-    if (showFilters && isScrolled && filterPanelRef.current) {
-      // Small delay to ensure the panel has actually expanded/painted if using transition,
-      // though here we use block/hidden toggle.
-      const height = filterPanelRef.current.offsetHeight;
-      if (height !== stickyFilterHeight) {
-        setStickyFilterHeight(height);
-      }
-    } else {
-      if (stickyFilterHeight !== 0) {
-        setStickyFilterHeight(0);
+    const root = document.documentElement;
+    const panel = filterPanelRef.current;
+    
+    function updateOffset() {
+      if (showFilters && isScrolled && panel) {
+        root.style.setProperty('--sticky-offset', `calc(3rem + ${panel.offsetHeight}px)`);
+      } else {
+        root.style.setProperty('--sticky-offset', isScrolled ? '3rem' : '0px');
       }
     }
-  }, [showFilters, isScrolled, stickyFilterHeight]);
+
+    updateOffset();
+    
+    if (!panel) return;
+    const observer = new ResizeObserver(() => updateOffset());
+    observer.observe(panel);
+    
+    return () => {
+      observer.disconnect();
+    };
+  }, [showFilters, isScrolled]);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -48,12 +55,12 @@ export default function App() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  function handleSortChange(field: SortField) {
-    setSort({
+  const handleSortChange = useCallback((field: SortField) => {
+    setSort(prev => ({
       field,
-      direction: sort.field === field && sort.direction === 'asc' ? 'desc' : 'asc',
-    });
-  }
+      direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  }, [setSort]);
 
   const activeFilterCount = useMemo(() => 
     filters.tiers.length +
@@ -63,21 +70,14 @@ export default function App() {
     (filters.showTodoOnly ? 1 : 0),
   [filters]);
 
-  // Derive the offset for the sticky table headers
-  const stickyTableHeaderOffset = useMemo(() => 
-    isScrolled 
-      ? `calc(3rem + ${stickyFilterHeight}px)` 
-      : '0px',
-  [isScrolled, stickyFilterHeight]);
-
   /** 
    * CRITICAL FIX: 
    * Instead of just toggling showFilters and letting the whole App rerender,
    * we want the UI thread to prioritize the visibility change.
    */
-  const handleToggleFilters = () => {
+  const handleToggleFilters = useCallback(() => {
     setShowFilters(prev => !prev);
-  };
+  }, []);
 
   return (
     <div 
@@ -195,7 +195,6 @@ export default function App() {
               onSortChange={handleSortChange}
               onToggleCompleted={toggleCompleted}
               onToggleTodo={toggleTodo}
-              stickyOffset={stickyTableHeaderOffset}
             />
           )}
         </main>

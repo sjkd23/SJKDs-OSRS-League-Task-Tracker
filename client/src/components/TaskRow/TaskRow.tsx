@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { TaskView } from '@/types/task';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
 import { RichText } from '@/components/RichText/RichText';
@@ -40,7 +41,7 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps) {
+export const TaskRow = memo(function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
@@ -191,5 +192,5 @@ export function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps)
       </td>
     </tr>
   );
-}
+});
 

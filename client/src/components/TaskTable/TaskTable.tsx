@@ -34,7 +34,6 @@ interface TaskTableProps {
   onSortChange: (field: SortField) => void;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
-  stickyOffset?: string;
 }
 
 export function TaskTable({
@@ -43,7 +42,6 @@ export function TaskTable({
   onSortChange,
   onToggleCompleted,
   onToggleTodo,
-  stickyOffset = '0px',
 }: TaskTableProps) {
   return (
     <div>
@@ -58,7 +56,7 @@ export function TaskTable({
                 <th
                   key={label}
                   onClick={() => onSortChange(field)}
-                  style={{ top: stickyOffset }}
+                  style={{ top: 'var(--sticky-offset, 0px)' }}
                   className={[
                     'sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark shadow-[0_1px_0_rgba(0,0,0,0.05)]',
                     'px-2 py-2 font-semibold whitespace-nowrap text-center transition-colors',

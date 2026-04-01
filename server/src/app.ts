@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import { tasksRouter } from './routes/tasks';
-import { wikiSyncRouter } from './routes/wikiSync';
 
 export function createApp() {
   const app = express();
@@ -15,7 +14,6 @@ export function createApp() {
   });
 
   app.use('/api/tasks', tasksRouter);
-  app.use('/api/wikisync', wikiSyncRouter);
 
   return app;
 }

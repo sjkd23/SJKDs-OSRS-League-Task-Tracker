@@ -1,5 +1,6 @@
 import type { AppTask, Tier } from '@/types/task';
 import type { ScraperTask } from '@/types/scraperTask';
+import { cleanWikiGarbage } from '@/utils/wikiContent';
 
 // ─── Tier configuration ───────────────────────────────────────────────────────
 
@@ -56,8 +57,8 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     structId: raw.structId,
     sortId: raw.sortId,
     area: raw.area,
-    name: raw.name,
-    description: raw.description,
+    name: cleanWikiGarbage(raw.name),
+    description: cleanWikiGarbage(raw.description),
     category: raw.category,
     // null means the same as "All" in the league data — no specific skill tier
     skill: raw.skill ?? 'All',
@@ -66,14 +67,14 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     points,
     completionPercent: raw.completionPercent ?? 0,
     skills: skillStrings,
-    wikiNotes: raw.wikiNotes ?? '',
-    requirementsText,
+    wikiNotes: cleanWikiGarbage(raw.wikiNotes ?? ''),
+    requirementsText: cleanWikiGarbage(requirementsText),
     ptsLabel: `${tier} – ${points}`,
     wikiUrl: raw.wikiUrl,
     // ── Rich-text parts: passed through as-is; optional / may be absent ──
-    nameParts: raw.nameParts,
-    descriptionParts: raw.descriptionParts,
-    requirementsParts: raw.requirementsParts,
+    nameParts: raw.nameParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
+    descriptionParts: raw.descriptionParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
+    requirementsParts: raw.requirementsParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
   };
 }
 

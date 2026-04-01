@@ -156,8 +156,17 @@
   /* ── N/A requirements cell ──────────────────────────────────────────────── */
   /* Fixed pale beige that overrides the alternating row pattern so every    */
   /* N/A cell looks identical regardless of odd/even position in the table.  */
+  /* Note: TaskRow logic applies .req-na-cell only when the row is NOT completed. */
   .req-na-cell {
     background-color: #ebe5d6 !important;
+  }
+
+  /* Ensure the N/A cell background matches the row hover color perfectly with no transition flicker */
+  .wikitable tr.task-completable:hover .req-na-cell {
+    background-color: #dff0df !important;
+  }
+  .dark .wikitable tr.task-completable:hover .req-na-cell {
+    background-color: #1a2d1e !important;
   }
   .dark .req-na-cell {
     background-color: #1f2d46 !important;
@@ -181,5 +190,11 @@
     @apply bg-wiki-link dark:bg-wiki-link-dark;
     @apply text-white;
     @apply hover:border-wiki-link-hover dark:hover:border-wiki-link-hover-dark;
+  }
+
+  /* ── Rich Text Spacing Fix ─────────────────────────────────────────────── */
+  /* Ensures that whitespace between span and a tags is preserved in the DOM. */
+  .rich-text-container {
+    display: inline;
   }
 }

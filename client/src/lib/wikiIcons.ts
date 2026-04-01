@@ -233,44 +233,81 @@ function substituteRegions(parts: RequirementPart[]): RequirementPart[] {
  * skill falls back to a plain-text part.
  */
 export function parseRequirements(requirementsText: string): RequirementPart[] {
-  if (!requirementsText || requirementsText === '—') {
-    return [{ kind: 'text', text: requirementsText || '—' }];
+  if (!requirementsText) {
+    return [];
   }
 
-  const segments = requirementsText
-    .split(/,\s*|\n|;\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  // If the requirements text is just a placeholder dash, return it as one plain text part.
+  if (requirementsText === '—') {
+    return [{ kind: 'text', text: '—' }];
+  }
 
   const parts: RequirementPart[] = [];
 
-  for (const seg of segments) {
-    // Pattern A: "50 Firemaking" or "Level 50 Firemaking", optionally with trailing
-    // context text (e.g. "14 Crafting Either Asgarnia ( 40 )").
-    // We match the skill prefix; any trailing text becomes a separate text part.
-    const mA = seg.match(/^(?:Level\s+)?(\d+)\s+([A-Za-z]+)(\s+.*)?$/i);
+  const segments = requirementsText
+    .split(/(\r?\n|,\s*|;\s*)/)
+    .filter((s) => s !== undefined && s !== '');
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+
+    // If it's a separator, add it as text.
+    if (seg.match(/^(\r?\n|,\s*|;\s*)$/)) {
+      parts.push({ kind: 'text', text: seg });
+      continue;
+    }
+
+    const trimmed = seg.trim();
+    if (!trimmed) {
+      parts.push({ kind: 'text', text: seg });
+      continue;
+    }
+
+    // Pattern A: "50 Firemaking" or "Level 50 Firemaking"
+    const mA = trimmed.match(/^(?:Level\s+)?(\d+)\s+([A-Z][a-z]+)$/);
     if (mA) {
       const level = parseInt(mA[1], 10);
       const skillName = mA[2].charAt(0).toUpperCase() + mA[2].slice(1).toLowerCase();
       const iconUrl = SKILL_ICON[skillName];
       if (iconUrl) {
+        // Preserving any whitespace from the original segment around the skill
+        const leadingSpace = seg.match(/^\s*/)?.[0] || '';
+        const trailingSpace = seg.match(/\s*$/)?.[0] || '';
+        if (leadingSpace) parts.push({ kind: 'text', text: leadingSpace });
         parts.push({ kind: 'skill', skill: skillName, level, iconUrl });
-        const trailing = mA[3]?.trim();
-        if (trailing) parts.push({ kind: 'text', text: trailing });
+        if (trailingSpace) parts.push({ kind: 'text', text: trailingSpace });
         continue;
       }
     }
 
-    // Pattern B: "Firemaking 50", optionally with trailing context text.
-    const mB = seg.match(/^([A-Za-z]+)\s+(\d+)(\s+.*)?$/);
+    // Pattern B: "Firemaking 50"
+    const mB = trimmed.match(/^([A-Z][a-z]+)\s+(\d+)$/);
     if (mB) {
       const skillName = mB[1].charAt(0).toUpperCase() + mB[1].slice(1).toLowerCase();
       const level = parseInt(mB[2], 10);
       const iconUrl = SKILL_ICON[skillName];
       if (iconUrl) {
+        // Preserving any whitespace from the original segment around the skill
+        const leadingSpace = seg.match(/^\s*/)?.[0] || '';
+        const trailingSpace = seg.match(/\s*$/)?.[0] || '';
+        if (leadingSpace) parts.push({ kind: 'text', text: leadingSpace });
         parts.push({ kind: 'skill', skill: skillName, level, iconUrl });
-        const trailing = mB[3]?.trim();
-        if (trailing) parts.push({ kind: 'text', text: trailing });
+        if (trailingSpace) parts.push({ kind: 'text', text: trailingSpace });
+        continue;
+      }
+    }
+
+    // Single Skill Pattern: "Thieving", "Woodcutting", etc.
+    const mC = trimmed.match(/^([A-Z][a-z]+)$/);
+    if (mC) {
+      const skillName = mC[1].charAt(0).toUpperCase() + mC[1].slice(1).toLowerCase();
+      const iconUrl = SKILL_ICON[skillName];
+      if (iconUrl) {
+        const leadingSpace = seg.match(/^\s*/)?.[0] || '';
+        const trailingSpace = seg.match(/\s*$/)?.[0] || '';
+        if (leadingSpace) parts.push({ kind: 'text', text: leadingSpace });
+        parts.push({ kind: 'skill', skill: skillName, level: 0, iconUrl });
+        if (trailingSpace) parts.push({ kind: 'text', text: trailingSpace });
         continue;
       }
     }
@@ -278,6 +315,5 @@ export function parseRequirements(requirementsText: string): RequirementPart[] {
     parts.push({ kind: 'text', text: seg });
   }
 
-  const base = parts.length > 0 ? parts : [{ kind: 'text' as const, text: requirementsText }];
-  return substituteRegions(base);
+  return substituteRegions(parts);
 }

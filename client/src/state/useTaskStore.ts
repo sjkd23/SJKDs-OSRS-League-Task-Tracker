@@ -165,31 +165,6 @@ export function useTaskStore() {
     [userState, patchUserState],
   );
 
-  /**
-   * Apply a WikiSync import result to the current user state.
-   *
-   * Merge behaviour — only marks the supplied IDs as completed.
-   * Does NOT un-complete tasks that are absent from the import list,
-   * and does NOT clear todo/favourite flags.
-   * Silently skips IDs that are not in the current task list.
-   */
-  const importCompletedTasks = useCallback(
-    (completedIds: string[]) => {
-      const knownIds = new Set(tasks.map(t => t.id));
-      setUserState((prev) => {
-        const next = new Map(prev);
-        for (const id of completedIds) {
-          if (!knownIds.has(id)) continue;
-          const current = next.get(id) ?? { ...EMPTY_USER_STATE };
-          next.set(id, { ...current, completed: true });
-        }
-        persistUserState(next);
-        return next;
-      });
-    },
-    [tasks],
-  );
-
   return {
     /** Whether task data is still being loaded from JSON */
     loading,
@@ -203,8 +178,6 @@ export function useTaskStore() {
     setSort,
     toggleCompleted,
     toggleTodo,
-    /** Apply WikiSync import: marks supplied task IDs as completed (merge, never clears). */
-    importCompletedTasks,
   };
 }
 

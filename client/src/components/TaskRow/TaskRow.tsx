@@ -124,11 +124,12 @@ export function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps)
       </td>
 
       {/* Requirements — icon-based rendering always; links from enriched parts when available.
-           N/A rows get a lighter background to visually match the wiki reference. */}
+           N/A rows get a lighter background to visually match the wiki reference,
+           but only if the task is NOT completed (so the green styling can win). */}
       <td
         className={[
           'px-2 py-1.5 text-wiki-text dark:text-wiki-text-dark align-middle',
-          reqIsNa ? 'req-na-cell' : ''
+          reqIsNa && !task.completed ? 'req-na-cell' : ''
         ].join(' ')}
       >
         <RequirementsCell
@@ -154,8 +155,8 @@ export function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps)
       </td>
 
       {/* Completion % — colour-coded by tier */}
-      <td className="p-0 align-middle">
-        <div className={`flex items-center justify-center px-1 py-1.5 h-full ${completionTierClass(task.completionPercent)}`}>
+      <td className={`p-0 align-middle ${completionTierClass(task.completionPercent)}`}>
+        <div className="flex items-center justify-center px-1 py-1.5 h-full">
           <span className="tabular-nums text-[13px] font-medium">
             {task.completionPercent.toFixed(1)}%
           </span>

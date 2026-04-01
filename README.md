@@ -65,27 +65,7 @@ Intended functionality:
 
 This feature should help with remembering short-term and long-term goals during Leagues.
 
-### 4. Task completion sync
-A major stretch goal is to sync completed tasks automatically.
-
-Possible approaches:
-
-#### Option A: RuneLite WikiSync
-- Investigate whether RuneLite’s WikiSync can be used directly
-- Need to determine whether access is public, limited, or protected in some way
-
-#### Option B: Wiki page scraping with IGN input
-- Let the user input a RuneLite / OSRS IGN
-- Attempt to read the wiki Leagues task page for that player
-- Use that data to determine:
-  - Completed tasks
-  - Uncompleted tasks
-  - Potentially unlocked regions
-  - Potentially other account progress indicators
-
-This part still needs research, especially around what is actually accessible and how reliable it would be.
-
-### 5. Relic tracking
+### 4. Relic tracking
 Potential future feature for tracking Leagues build choices.
 
 Ideas:
@@ -97,7 +77,7 @@ Ideas:
 
 This may be useful as a separate panel or account summary area.
 
-### 6. Better wiki linking / navigation
+### 5. Better wiki linking / navigation
 Tasks should be easier to use as a jumping-off point for learning or planning.
 
 Example:
@@ -124,8 +104,6 @@ The main priority is preserving the wiki-like experience while adding features t
 ## Open Questions / Things to Research
 
 - How close should the UI go to the wiki styling?
-- Is RuneLite WikiSync accessible for a project like this?
-- Can wiki task progress pages be reliably scraped using an IGN?
 - Should to-do items be ordered manually, automatically, or both?
 - How should relic and region selections be represented in the UI?
 - What task metadata will be needed to support filtering cleanly?

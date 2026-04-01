@@ -3,12 +3,11 @@ import { useTheme } from '@/hooks/useTheme';
 import { TaskTable } from '@/components/TaskTable/TaskTable';
 import { TaskFiltersBar } from '@/components/TaskFilters/TaskFiltersBar';
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
-import { WikiSyncLookup } from '@/components/WikiSyncLookup/WikiSyncLookup';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import type { SortField } from '@/types/task';
 
 export default function App() {
-  const { loading, tasks, visibleTasks, filters, sort, setFilters, setSort, toggleCompleted, toggleTodo, importCompletedTasks } =
+  const { loading, tasks, visibleTasks, filters, sort, setFilters, setSort, toggleCompleted, toggleTodo } =
     useTaskStore();
   const { theme, toggleTheme } = useTheme();
 
@@ -47,11 +46,6 @@ export default function App() {
             <ThemeToggle theme={theme} onToggle={toggleTheme} />
           </div>
         </div>
-
-        {/* ── WikiSync import ─────────────────────────────────────────── */}
-        {!loading && (
-          <WikiSyncLookup onImport={importCompletedTasks} />
-        )}
 
         {/* ── Filters ────────────────────────────────────────────────────── */}
         <div className="mt-3">

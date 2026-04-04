@@ -2,7 +2,7 @@ import type { AppTask, Tier } from '@/types/task';
 import { TIER_POINTS } from '@/lib/mapScraperTask';
 
 /**
- * Development seed data — a small realistic sample of Demonic Pacts-style tasks.
+ * Development seed data — a small realistic sample of Raging Echoes-style tasks.
  *
  * This dataset is already in the normalised AppTask shape, so it can be
  * rendered directly without going through mapScraperTask.

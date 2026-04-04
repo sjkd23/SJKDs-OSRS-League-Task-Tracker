@@ -5,7 +5,7 @@ import { cleanWikiGarbage } from '@/utils/wikiContent';
 // ─── Tier configuration ───────────────────────────────────────────────────────
 
 /**
- * Points awarded per tier. Adjust here when official Demonic Pacts values
+ * Points awarded per tier. Adjust here when official Raging Echoes values
  * are confirmed — all display labels update automatically.
  */
 export const TIER_POINTS: Record<Tier, number> = {

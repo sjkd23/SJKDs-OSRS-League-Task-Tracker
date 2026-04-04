@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Project Overview
-This repository is an **OSRS Leagues task tracker** for the upcoming **Demonic Pacts** League.
+This repository is an **OSRS Leagues task tracker** for the **Raging Echoes** League.
 
 The goal is to recreate the feel of the **OSRS Wiki task list** as closely as practical, while adding quality-of-life features such as:
 

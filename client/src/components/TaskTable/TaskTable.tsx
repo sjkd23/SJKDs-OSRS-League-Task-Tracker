@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { TaskView, SortConfig, SortField } from '@/types/task';
 import { TaskRow } from '@/components/TaskRow/TaskRow';
 
@@ -43,8 +45,37 @@ export function TaskTable({
   onToggleCompleted,
   onToggleTodo,
 }: TaskTableProps) {
+  const tableWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Window-based virtualizer: uses window.scrollY as the scroll reference.
+  // scrollMargin tells it how far the list container is from the top of the document.
+  // We read offsetTop directly from the ref on every render so it stays in sync with
+  // layout changes (filter panel opening/closing, etc.).
+  const rowVirtualizer = useWindowVirtualizer({
+    count: tasks.length,
+    estimateSize: () => 38, // approximate row height in px (py-1.5 rows ≈ 38px)
+    overscan: 12,
+    scrollMargin: tableWrapperRef.current?.offsetTop ?? 0,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalSize = rowVirtualizer.getTotalSize();
+  const scrollMargin = rowVirtualizer.options.scrollMargin ?? 0;
+
+  // Padding rows fill the space above/below the rendered window so the scrollbar
+  // represents the true full list height. This is the correct approach for real
+  // <table> elements where position:absolute rows break layout.
+  const paddingTop =
+    virtualRows.length > 0
+      ? Math.max(0, virtualRows[0].start - scrollMargin)
+      : 0;
+  const paddingBottom =
+    virtualRows.length > 0
+      ? Math.max(0, totalSize - virtualRows[virtualRows.length - 1].end)
+      : 0;
+
   return (
-    <div className="w-full relative">
+    <div ref={tableWrapperRef} className="w-full relative">
       {/* wikitable: border-collapse, 1 px cell borders, no shadow/radius */}
       {/* table-fixed: enforces column widths defined on <th> elements, prevents overflow */}
       <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px]">
@@ -89,14 +120,26 @@ export function TaskTable({
               </td>
             </tr>
           ) : (
-            tasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onToggleCompleted={onToggleCompleted}
-                onToggleTodo={onToggleTodo}
-              />
-            ))
+            <>
+              {paddingTop > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={COLUMNS.length} style={{ height: paddingTop, padding: 0, border: 'none' }} />
+                </tr>
+              )}
+              {virtualRows.map((virtualRow) => (
+                <TaskRow
+                  key={virtualRow.key}
+                  task={tasks[virtualRow.index]}
+                  onToggleCompleted={onToggleCompleted}
+                  onToggleTodo={onToggleTodo}
+                />
+              ))}
+              {paddingBottom > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={COLUMNS.length} style={{ height: paddingBottom, padding: 0, border: 'none' }} />
+                </tr>
+              )}
+            </>
           )}
         </tbody>
       </table>

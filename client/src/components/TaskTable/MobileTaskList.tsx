@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { TaskView, SortConfig, SortField } from '@/types/task';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
 import { RichText } from '@/components/RichText/RichText';
@@ -47,7 +48,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
   return (
     <div
-      className={['flex flex-col border rounded-sm mb-3 shadow-sm overflow-hidden transition-colors', cardBgClass].join(' ')}
+      className={['flex flex-col border rounded-sm shadow-sm overflow-hidden transition-colors', cardBgClass].join(' ')}
     >
       {/* HEADER: Area Icon, Name, Tier/Points, Completion % */}
       <div className="flex items-start gap-2 p-3 pb-2 border-b border-wiki-border dark:border-wiki-border-dark/50">
@@ -183,25 +184,77 @@ export function MobileTaskList({
   onToggleCompleted,
   onToggleTodo,
 }: MobileTaskListProps) {
-  return (
-    <div className="flex flex-col gap-2 p-2">
-      {tasks.length === 0 ? (
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Window-based virtualizer with dynamic size measurement.
+  // Cards have variable heights (description and requirements text varies per task),
+  // so we use measureElement to record the real height of each rendered card.
+  // The overscan keeps a small buffer of cards above/below the viewport.
+  const virtualizer = useWindowVirtualizer({
+    count: tasks.length,
+    estimateSize: () => 220, // initial guess; measureElement refines this per card
+    overscan: 5,
+    scrollMargin: listRef.current?.offsetTop ?? 0,
+  });
+
+  if (tasks.length === 0) {
+    return (
+      <div className="flex flex-col gap-2 p-2">
         <div className="text-center py-8 text-wiki-muted dark:text-wiki-muted-dark italic text-[13px]">
           No tasks match the current filters.{' '}
           <span className="not-italic text-wiki-link dark:text-wiki-link-dark cursor-pointer hover:underline">
             Try adjusting or resetting the filters.
           </span>
         </div>
-      ) : (
-        tasks.map((task) => (
-          <MobileTaskCard
-            key={task.id}
-            task={task}
-            onToggleCompleted={onToggleCompleted}
-            onToggleTodo={onToggleTodo}
-          />
-        ))
-      )}
+      </div>
+    );
+  }
+
+  const items = virtualizer.getVirtualItems();
+  const scrollMargin = virtualizer.options.scrollMargin ?? 0;
+
+  return (
+    <div ref={listRef} className="p-2">
+      {/*
+        Outer div reserves the full scrollable height for all tasks so the browser
+        scrollbar behaves as if every card is rendered.
+        Inner div is absolutely positioned and translated to where the first visible
+        card starts; cards then stack in normal flow inside it.
+        measureElement is called on the wrapper div for each card so the virtualizer
+        learns the real height and improves scroll accuracy over time.
+      */}
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            transform: `translateY(${items.length > 0 ? items[0].start - scrollMargin : 0}px)`,
+          }}
+        >
+          {items.map((virtualRow) => (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              className="pb-3"
+            >
+              <MobileTaskCard
+                task={tasks[virtualRow.index]}
+                onToggleCompleted={onToggleCompleted}
+                onToggleTodo={onToggleTodo}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

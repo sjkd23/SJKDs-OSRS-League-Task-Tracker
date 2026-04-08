@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import type {
   AppTask,
   TaskUserState,
@@ -11,6 +11,14 @@ import { mapScraperTasks } from '@/lib/mapScraperTask';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { filterTasks, sortTasks } from '@/utils/taskFilters';
 import { loadFromStorage, saveToStorage } from '@/utils/storage';
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
@@ -96,6 +104,10 @@ export function useTaskStore() {
     () => new Map(),
   );
 
+  // Snapshot for single-level import revert
+  const preImportSnapshot = useRef<Map<string, TaskUserState> | null>(null);
+  const [canRevert, setCanRevert] = useState(false);
+
   // Load task data on mount and rehydrate persisted user state
   useEffect(() => {
     fetch(DEV_DATA_URL)
@@ -166,8 +178,127 @@ export function useTaskStore() {
     [userState, patchUserState],
   );
 
+  /**
+   * Mark a batch of task IDs as completed. IDs that are already completed
+   * are left unchanged. Persists to localStorage after the update.
+   */
+  const importCompleted = useCallback((ids: string[]) => {
+    setUserState((prev) => {
+      const next = new Map(prev);
+      for (const id of ids) {
+        const current = prev.get(id) ?? { ...EMPTY_USER_STATE };
+        if (!current.completed) {
+          next.set(id, { ...current, completed: true });
+        }
+      }
+      persistUserState(next);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Replace the completed state for all known tasks with exactly the provided
+   * set of IDs. Tasks in `ids` are marked completed; all other tasks are
+   * cleared. To-do state is preserved unchanged for all tasks.
+   *
+   * This is the intended action for a full plugin-export import.
+   */
+  const replaceCompleted = useCallback(
+    (ids: string[]) => {
+      const completedSet = new Set(ids);
+      setUserState((prev) => {
+        const next = new Map(prev);
+        for (const task of tasks) {
+          const current = prev.get(task.id);
+          const shouldBeCompleted = completedSet.has(task.id);
+          if ((current?.completed ?? false) !== shouldBeCompleted) {
+            next.set(task.id, {
+              ...(current ?? { ...EMPTY_USER_STATE }),
+              completed: shouldBeCompleted,
+            });
+          }
+        }
+        persistUserState(next);
+        return next;
+      });
+    },
+    [tasks],
+  );
+
+  /**
+   * Replace both completed and To-Do state for all known tasks using the
+   * two provided ID sets. This is the full plugin-export import action.
+   *
+   * - Tasks in `completedIds` are marked completed; all others are cleared.
+   * - Tasks in `todoIds` are marked as To-Do; all others are cleared.
+   * Both states are updated atomically in a single setUserState call.
+   * Saves a snapshot of prior user state for single-level revert support.
+   */
+  const replaceFromPlugin = useCallback(
+    (completedIds: string[], todoIds: string[]) => {
+      const completedSet = new Set(completedIds);
+      const todoSet = new Set(todoIds);
+      setUserState((prev) => {
+        // Capture snapshot before applying so revert can restore it
+        preImportSnapshot.current = new Map(prev);
+        const next = new Map(prev);
+        for (const task of tasks) {
+          const current = prev.get(task.id);
+          const shouldBeCompleted = completedSet.has(task.id);
+          const shouldBeTodo = todoSet.has(task.id);
+          const currentCompleted = current?.completed ?? false;
+          const currentTodo = current?.isTodo ?? false;
+          if (currentCompleted !== shouldBeCompleted || currentTodo !== shouldBeTodo) {
+            next.set(task.id, {
+              completed: shouldBeCompleted,
+              isTodo: shouldBeTodo,
+            });
+          }
+        }
+        persistUserState(next);
+        return next;
+      });
+      setCanRevert(true);
+    },
+    [tasks],
+  );
+
+  /**
+   * Restore the user state snapshot taken before the most recent import.
+   * Clears `canRevert` after use — only supports single-level undo.
+   */
+  const revertImport = useCallback(() => {
+    if (!preImportSnapshot.current) return;
+    const snapshot = preImportSnapshot.current;
+    preImportSnapshot.current = null;
+    setCanRevert(false);
+    setUserState(() => {
+      persistUserState(snapshot);
+      return snapshot;
+    });
+  }, []);
+
+  /**
+   * Returns true if applying the given completedIds and todoIds would produce
+   * no change to the current user state (i.e., the import is a no-op).
+   */
+  const isNoOpImport = useCallback(
+    (completedIds: string[], todoIds: string[]): boolean => {
+      const currentCompSet = new Set<string>();
+      const currentTodoSet = new Set<string>();
+      for (const [id, state] of userState) {
+        if (state.completed) currentCompSet.add(id);
+        if (state.isTodo) currentTodoSet.add(id);
+      }
+      return (
+        setsEqual(currentCompSet, new Set(completedIds)) &&
+        setsEqual(currentTodoSet, new Set(todoIds))
+      );
+    },
+    [userState],
+  );
+
   return {
-    /** Whether task data is still being loaded from JSON */
     loading,
     /** All tasks (content only, no user state) — use for deriving filter options */
     tasks,
@@ -179,6 +310,12 @@ export function useTaskStore() {
     setSort,
     toggleCompleted,
     toggleTodo,
+    importCompleted,
+    replaceCompleted,
+    replaceFromPlugin,
+    isNoOpImport,
+    canRevert,
+    revertImport,
   };
 }
 

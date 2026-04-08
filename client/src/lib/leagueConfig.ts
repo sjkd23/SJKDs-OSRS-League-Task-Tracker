@@ -19,6 +19,11 @@ export interface LeagueConfig {
    * Filename of the task dataset under client/public/data/.
    */
   dataFile: string;
+  /**
+   * Task type identifier as written in the Tasks Tracker plugin export JSON
+   * (`taskType` field), e.g. "LEAGUE_5".
+   */
+  pluginTaskType: string;
 }
 
 // ── Current league ────────────────────────────────────────────────────────────
@@ -27,8 +32,9 @@ export interface LeagueConfig {
 // Swap id, name, slug, wikiTasksUrl, and dataFile together.
 
 export const CURRENT_LEAGUE: LeagueConfig = {
-  id:       5,
-  name:     'Raging Echoes',
-  slug:     'raging-echoes',
-  dataFile: 'LEAGUE_5.full.json',
+  id:             5,
+  name:           'Raging Echoes',
+  slug:           'raging-echoes',
+  dataFile:       'LEAGUE_5.full.json',
+  pluginTaskType: 'LEAGUE_5',
 };

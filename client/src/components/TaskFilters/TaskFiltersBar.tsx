@@ -38,7 +38,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
     filters.tiers.length + filters.skills.length + filters.areas.length;
 
   return (
-    <div className="wiki-filter-strip">
+    <div>
       {/* Strip header row */}
       <div className="flex items-center justify-between gap-2 mb-2">
         <span className="font-semibold text-[13px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide">

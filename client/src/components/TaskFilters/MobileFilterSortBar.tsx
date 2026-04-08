@@ -2,6 +2,8 @@ import { memo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppTask, TaskFilters, SortConfig, SortField } from '@/types/task';
 import { TaskFiltersBar } from './TaskFiltersBar';
+import { ImportButton } from '@/components/ImportButton/ImportButton';
+import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 
 interface MobileFilterSortBarProps {
   tasks: AppTask[];
@@ -10,6 +12,9 @@ interface MobileFilterSortBarProps {
   onFiltersChange: (filters: TaskFilters) => void;
   onSortChange: (field: SortField) => void;
   activeCount: number;
+  onImport: (completedIds: string[], todoIds: string[]) => boolean;
+  canRevert: boolean;
+  onRevert: () => void;
 }
 
 export const MobileFilterSortBar = memo(function MobileFilterSortBar({
@@ -19,9 +24,29 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   onFiltersChange,
   onSortChange,
   activeCount,
+  onImport,
+  canRevert,
+  onRevert,
 }: MobileFilterSortBarProps) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 200);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Local import state for mobile (independent of desktop)
+  const [importPaste, setImportPaste] = useState('');
+  const [importTracked, setImportTracked] = useState(false);
+  const [importStatus, setImportStatus] = useState<ImportStatus>({ type: 'idle' });
+
+  function handleMobileRevert() {
+    onRevert();
+    setImportStatus({ type: 'idle' });
+  }
 
   useEffect(() => {
     if (filterOpen || sortOpen) {
@@ -37,6 +62,8 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
     };
   }, [filterOpen, sortOpen]);
 
+
+
   const filterSheet = filterOpen && createPortal(
     <div className="fixed inset-0 z-[100] flex flex-col bg-wiki-bg dark:bg-wiki-bg-dark font-wiki">
       <div className="flex items-center justify-between px-4 py-3 border-b border-wiki-border dark:border-wiki-border-dark bg-wiki-surface dark:bg-wiki-surface-dark">
@@ -50,6 +77,21 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
       </div>
       <div className="flex-1 overflow-y-auto p-4 mobile-filter-sheet-content">
         <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} />
+        {/* ── Import section ───────────────────────────────────── */}
+        <div className="mt-5 pt-4 border-t border-wiki-border dark:border-wiki-border-dark">
+          <ImportButton
+            tasks={tasks}
+            pasteValue={importPaste}
+            onPasteChange={setImportPaste}
+            importTracked={importTracked}
+            onImportTrackedChange={setImportTracked}
+            status={importStatus}
+            onStatusChange={setImportStatus}
+            canRevert={canRevert}
+            onRevert={handleMobileRevert}
+            onImport={(completedIds, todoIds) => onImport(completedIds, todoIds)}
+          />
+        </div>
       </div>
     </div>,
     document.body
@@ -135,11 +177,20 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
           </svg>
           Sort: {SortOptions.find(o => o.field === sort.field)?.label.replace(' (Default)', '')}
         </button>
+
       </div>
       
       <button
         onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-wiki-text dark:text-wiki-text-dark bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark rounded-full active:scale-95 transition-transform"
+        aria-label="Scroll to top"
+        className={[
+          'w-10 h-10 flex-shrink-0 flex items-center justify-center',
+          'text-wiki-text dark:text-wiki-text-dark',
+          'bg-wiki-surface dark:bg-wiki-surface-dark',
+          'border border-wiki-border dark:border-wiki-border-dark rounded-full',
+          'active:scale-95 transition-all duration-200',
+          isScrolled ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+        ].join(' ')}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
           <path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/>

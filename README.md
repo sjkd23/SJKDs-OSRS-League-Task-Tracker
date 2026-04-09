@@ -1,27 +1,29 @@
 ﻿# OSRS Leagues Task Tracker
 
-A custom task tracker for Old School RuneScape Leagues, currently configured for **League 5: Raging Echoes**.
+A sleek, custom task tracker built specifically for Old School RuneScape Leagues, currently tuned for **League 5: Raging Echoes**.
 
-This is a frontend-only React application that recreates the official OSRS Wiki task list layout while adding essential features for planning and progression. 
+We wanted a tracker that actually feels like the official OSRS Wiki—dense, familiar, and easy to read—but with all the quality-of-life features you need to plan your route, track your progress, and get things done without dealing with a clunky UI.
 
-## Current Status
+## What's Inside?
 
-The application is fully functional for **Raging Echoes**. It relies entirely on client-side state, making it fast and easy to deploy as a static site.
+The app is fully functional and up-to-date with **Raging Echoes**. It runs entirely in your browser without needing an account, which means it's blazing fast, completely private, and easily deployable as a static site.
 
-## Features
+### Key Features
 
-- **Wiki-like UI:** Familiar and dense presentation, mirroring the standard OSRS Wiki table layout.
-- **Responsive Design:** Desktop table view paired with a mobile-friendly card/sheet layout.
-- **Light & Dark Mode:** Built-in theme support styled for readability.
-- **Advanced Filtering & Sorting:** Filter tasks by Skill, Region, and Tier (Difficulty). Supports combinations of filters.
-- **Completion & To-Do Tracking:** Manually track completed tasks and flag tasks as "To-Do" for quick access.
-- **Local Persistence:** Your progress and preferences (completed tasks, to-dos, theme) are automatically saved to your browser's "localStorage".
-- **Rich Task Descriptions:** Renders OSRS Wiki icons and parsed wikilinks seamlessly in task descriptions.
+- **Wiki-first UI:** A familiar, dense presentation that mirrors the standard OSRS Wiki table layout. No flashy redesigns, just the data you need.
+- **RuneLite Integration:** Easily import your progress straight from the **Tasks Tracker** RuneLite plugin by pasting your export JSON. Need to undo an accidental import? We've got a handy Revert button.
+- **Responsive Design:** A fully featured desktop table view that seamlessly switches to a mobile-friendly card/sheet layout when you're playing on your phone.
+- **Light & Dark Mode:** Built-in theme toggles that remember your preference and are carefully styled for readability.
+- **Advanced Filtering & Sorting:** Narrow down your grind by Skill, Region, Tier (Difficulty), and Status (Completed/To-Do). Stack as many filters as you need.
+- **Completion & To-Do Tracking:** Manually check off completed tasks or flag them as "To-Do" to build your perfect route. 
+- **Auto-Saving:** Your progress, preferences, and lists are automatically saved locally in your browser. Close the tab, come back later, and pick up right where you left off.
+- **Rich Task Descriptions:** We render actual OSRS Wiki icons and support parsed wikilinks directly inside task descriptions. 
 
-*(Note: Screenshots can be added here in the future to showcase the UI)*
+*(Note: Screenshots are coming soon to showcase the UI!)*
 
 ## Tech Stack
 
+We kept it simple, modern, and snappy:
 - **React 18**
 - **TypeScript**
 - **Vite**
@@ -29,7 +31,7 @@ The application is fully functional for **Raging Echoes**. It relies entirely on
 
 ## Quick Start
 
-The app is entirely client-side. The current task dataset is bundled statically in the "client/public/data" directory.
+Since this is an entirely client-side app, setting it up locally is a breeze. The current task dataset is statically bundled right into the "client/public/data" directory.
 
 ### Local Development
 
@@ -37,23 +39,23 @@ The app is entirely client-side. The current task dataset is bundled statically 
    `ash
    cd client
    `
-2. Install dependencies:
+2. Install the dependencies:
    `ash
    npm install
    `
-3. Start the development server:
+3. Start the dev server:
    `ash
    npm run dev
    `
-   The app will be available at "http://localhost:5173".
+   The app will spin up at http://localhost:5173.
 
 ### Build & Check
 
-To build for production:
+To build the project for production:
 `ash
 npm run build
 `
-To preview the production build locally:
+To preview that production build locally:
 `ash
 npm run preview
 `
@@ -64,33 +66,36 @@ npm run lint
 
 ## Project Structure Overview
 
-- "client/public/data/" - Static task datasets ("LEAGUE_5.full.json").
-- "client/public/icons/" - OSRS Wiki skill and area icons.
-- "client/src/components/" - React components, organized by feature area (e.g., "TaskTable", "TaskFilters", "RichText").
-- "client/src/lib/" - Configuration ("leagueConfig.ts") and mapping utilities to parse raw scraper data.
-- "client/src/state/" - Core hooks for state management (e.g., "useTaskStore.ts" bridging local storage).
-- "client/src/utils/" - Shared logic for filtering, storage access, and rendering wiki content.
+- "client/public/data/" - Static JSON task datasets (like "LEAGUE_5.full.json").
+- "client/public/icons/" - Your favorite OSRS Wiki skill and area icons.
+- "client/src/components/" - React components chopped up by feature area (e.g., "TaskTable", "TaskFilters", "ImportButton").
+- "client/src/lib/" - League configurations and data mapping utilities.
+- "client/src/state/" - Core hooks handling state (e.g., "useTaskStore.ts"), bridging straight into local storage.
+- "client/src/utils/" - Shared logic for reading plugin exports, filtering, storage access, and rendering wiki content.
 
-## How Data Works
+## How the Data Works
 
-- **Bundled Dataset:** We use a JSON file representing raw wiki tasks (currently "LEAGUE_5.full.json").
-- **Pipeline:** Raw scraper tasks are fetched locally, mapped into "AppTask" models via "src/lib/mapScraperTask.ts", and merged dynamically with user completion state on the client.
-- **Persistence:** User state (completed/todos) is saved purely in "localStorage". 
+- **Bundled Dataset:** We use a raw JSON file containing the wiki tasks (currently "LEAGUE_5.full.json").
+- **Pipeline:** We load the raw tasks, map them into our own "AppTask" models via "src/lib/mapScraperTask.ts", and dynamically merge them with your local completion state.
+- **Persistence:** Everything is stored purely via "localStorage".
 
-For deep dives, see [docs/data-pipeline.md](docs/data-pipeline.md).
+For deeper dives into our data strategy, check out [Docs: Data Pipeline](docs/data-pipeline.md).
 
 ## Deployment
 
-The application compiles to a simple static site and can be hosted on any static hosting provider (e.g., GitHub Pages, Cloudflare Pages, Netlify).
-*(Note: "vite.config.ts" contains a local proxy for "/api", but this is merely a placeholder—there is no backend needed or provided right now.)*
+Because the application compiles down to flat static files, it can be hosted essentially anywhere for free (GitHub Pages, Cloudflare Pages, Netlify, Vercel, you name it).
 
-See [docs/deployment.md](docs/deployment.md) for more details.
+*(Note: While "vite.config.ts" might have a proxy configured for "/api", it's just a placeholder—we don't need or provide a backend out of the box right now.)*
 
-## Known Limitations / Not Yet Implemented
+See [Docs: Deployment](docs/deployment.md) for more details.
 
-- **No Remote Sync:** Progress is constrained to the specific browser you use ("localStorage"). There is no RuneLite auto-sync or cloud account sync yet.
-- **Relic / Region Planning Helpers:** While tasks can be filtered by region, an interactive relic or region path planner is not built in.
+## Known Limitations & Future Plans
+
+- **No Remote Sync:** Since progress lives in "localStorage", your phone and your desktop won't share state unless you manually copy your RuneLite export around. A cloud account sync might be a fun future addition.
+- **Relic / Region Planning Helpers:** While you can filter tasks by region, we don't currently have a dedicated interactive relic pathing or region planner built-in.
 
 ## Contributing
 
-We welcome improvements! See [docs/contributing.md](docs/contributing.md) for our guidelines on keeping the codebase clean and aligned with the wiki-first UI philosophy. To learn how to update the tracker for a new league dataset, refer to [docs/league-update-checklist.md](docs/league-update-checklist.md).
+We'd love your help! We're prioritizing an experience that stays true to the wiki, keeping things fast and clean. 
+
+Check out [Docs: Contributing](docs/contributing.md) for guidelines on how to keep the codebase tidy and aligned with our philosophy. If you're looking to help out with updating the tracker when a new league drops, take a look at [Docs: League Update Checklist](docs/league-update-checklist.md).

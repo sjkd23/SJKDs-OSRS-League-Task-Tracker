@@ -100,12 +100,16 @@
     @apply font-semibold whitespace-nowrap text-wiki-text dark:text-wiki-text-dark;
   }
 
-  .wikitable tbody tr:nth-child(odd) {
-    @apply bg-wiki-table-row-alt dark:bg-wiki-table-row-alt-dark;
+  /* Row stripe colours are applied via .row-alt / default on the <tr> element.
+     nth-child MUST NOT be used here: the window virtualizer inserts a padding
+     <tr> spacer whose presence shifts all nth-child positions, causing every
+     visible row to flip its stripe colour as the user scrolls. */
+  .wikitable tbody tr {
+    @apply bg-wiki-table-bg dark:bg-wiki-table-bg-dark;
   }
 
-  .wikitable tbody tr:nth-child(even) {
-    @apply bg-wiki-table-bg dark:bg-wiki-table-bg-dark;
+  .wikitable tbody tr.row-alt {
+    @apply bg-wiki-table-row-alt dark:bg-wiki-table-row-alt-dark;
   }
 
   /* Hover: subtle darkening in light, subtle brightening in dark */
@@ -117,8 +121,8 @@
   }
 
   /* ── Completed row ─────────────────────────────────────────────────────── */
-  /* Overrides the nth-child alternating rows with a soft green tint.         */
-  /* !important needed here to beat Tailwind's specificity on nth-child.      */
+  /* Overrides the alternating stripe rows with a soft green tint.            */
+  /* !important needed to beat the equal specificity of .row-alt / base tr.   */
   .wikitable tbody tr.task-completed {
     background-color: #c8e8c8 !important;
     color: #4a6b4a;

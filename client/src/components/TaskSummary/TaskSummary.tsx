@@ -51,7 +51,7 @@ export const TaskSummary = memo(function TaskSummary({
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-wiki-muted dark:text-wiki-muted-dark">
                     <span>
                         <strong className="font-bold text-wiki-text dark:text-wiki-text-dark">{fmt(visibleCount)}</strong>
-                        <span> / {fmt(totalCount)} tasks</span>
+                        <span> / {fmt(totalCount)} tasks</span>s
                     </span>
 
                     <span className="text-[16px] leading-none text-wiki-text dark:text-wiki-text-dark opacity-40 select-none" aria-hidden>&bull;</span>
@@ -80,16 +80,24 @@ export const TaskSummary = memo(function TaskSummary({
 
     return (
         <>
-            {/* Mobile: single flowing sentence, no bullets */}
-            <div className={`${sharedClass} sm:hidden`}>
-                Showing{' '}
-                <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(visibleCount)}</strong>
-                {' '}of{' '}
-                <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(totalCount)}</strong>
-                {' '}task{totalCount !== 1 ? 's' : ''},{' '}
-                <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(visiblePoints)}</strong>
-                {' '}pts visible ({fmt(visiblePointsExcludingCompleted)} excl. completed), completed{' '}
-                <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(completedCount)} tasks / {fmt(totalAcquiredPoints)} pts</strong>
+            {/* Mobile: one line per segment */}
+            <div className={`${sharedClass} sm:hidden flex flex-col gap-y-0.5`}>
+                <div>
+                    Showing{' '}
+                    <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(visibleCount)}</strong>
+                    {' '}of{' '}
+                    <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(totalCount)}</strong>
+                    {' '}task{totalCount !== 1 ? 's' : ''}
+                </div>
+                <div>
+                    Points shown:{' '}
+                    <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(visiblePoints)}</strong>
+                    {' '}({fmt(visiblePointsExcludingCompleted)} excl. completed)
+                </div>
+                <div>
+                    Completed:{' '}
+                    <strong className="text-wiki-text dark:text-wiki-text-dark">{fmt(completedCount)} tasks / {fmt(totalAcquiredPoints)} pts</strong>
+                </div>
             </div>
 
             {/* Desktop: flex layout with bullet separators */}

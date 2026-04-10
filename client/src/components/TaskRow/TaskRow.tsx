@@ -31,6 +31,11 @@ export function completionTierClass(pct: number): string {
 
 export interface TaskRowProps {
   task: TaskView;
+  /** Stable 0-based position of this task in the current filtered list.
+   *  Used to determine stripe colour (even index → alt/darker row).
+   *  Must come from virtualRow.index, NOT from CSS nth-child, so that
+   *  the virtualizer padding spacer row cannot corrupt row parity. */
+  rowIndex: number;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
 }
@@ -41,7 +46,7 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(function TaskRow({ task, onToggleCompleted, onToggleTodo }: TaskRowProps) {
+export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
@@ -57,9 +62,13 @@ export const TaskRow = memo(function TaskRow({ task, onToggleCompleted, onToggle
     onToggleCompleted(task.id);
   }
 
+  // Even-indexed rows (0, 2, 4 …) get the alt/slightly-darker stripe to preserve
+  // the same visual rhythm as the old :nth-child(odd) rule (child 1 = index 0).
+  const stripeClass = rowIndex % 2 === 0 ? 'row-alt' : '';
+
   return (
     <tr
-      className={task.completed ? 'task-completed' : 'task-completable'}
+      className={[task.completed ? 'task-completed' : 'task-completable', stripeClass].filter(Boolean).join(' ')}
       onClick={handleRowClick}
       style={{ cursor: 'pointer' }}
       aria-label={task.completed ? `${task.name} — completed` : `${task.name} — click to mark complete`}

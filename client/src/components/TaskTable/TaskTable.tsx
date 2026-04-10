@@ -130,6 +130,7 @@ export function TaskTable({
                 <TaskRow
                   key={virtualRow.key}
                   task={tasks[virtualRow.index]}
+                  rowIndex={virtualRow.index}
                   onToggleCompleted={onToggleCompleted}
                   onToggleTodo={onToggleTodo}
                 />

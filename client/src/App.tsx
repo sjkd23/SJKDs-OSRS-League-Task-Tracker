@@ -6,6 +6,7 @@ import { TaskTable } from '@/components/TaskTable/TaskTable';
 import { MobileTaskList } from '@/components/TaskTable/MobileTaskList';
 import { TaskFiltersBar } from '@/components/TaskFilters/TaskFiltersBar';
 import { MobileFilterSortBar } from '@/components/TaskFilters/MobileFilterSortBar';
+import { TaskSummary } from '@/components/TaskSummary/TaskSummary';
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
 import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
@@ -17,8 +18,12 @@ const MemoizedTaskTable = memo(TaskTable);
 const MemoizedMobileTaskList = memo(MobileTaskList);
 
 export default function App() {
-  const { loading, tasks, visibleTasks, filters, sort, setFilters, setSort, toggleCompleted, toggleTodo, replaceFromPlugin, isNoOpImport, canRevert, revertImport } =
-    useTaskStore();
+  const {
+    loading, tasks, visibleTasks,
+    visiblePointsTotal, visiblePointsExcludingCompleted, totalAcquiredPoints, totalCompletedCount,
+    filters, sort, setFilters, setSort,
+    toggleCompleted, toggleTodo, replaceFromPlugin, isNoOpImport, canRevert, revertImport,
+  } = useTaskStore();
   const { theme, toggleTheme } = useTheme();
   const layoutMode = useLayoutMode();
   
@@ -154,6 +159,20 @@ export default function App() {
               )}
             </div>
 
+            {/* Compact summary — always visible in the sticky bar */}
+            <div className="flex-1 flex justify-center pointer-events-none px-4">
+              <TaskSummary
+                variant="compact"
+                loading={loading}
+                visibleCount={visibleTasks.length}
+                totalCount={tasks.length}
+                visiblePoints={visiblePointsTotal}
+                visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+                totalAcquiredPoints={totalAcquiredPoints}
+                completedCount={totalCompletedCount}
+              />
+            </div>
+
             <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
               <button
                 onClick={(e) => {
@@ -212,19 +231,18 @@ export default function App() {
               SJKD's Wiki-Style Leagues Task Tracker
             </div>
             <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} League - Tasks</h1>
-            <p className="mt-1 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
-              {loading ? (
-                <span>Loading tasks…</span>
-              ) : (
-                <>
-                  Showing{' '}
-                  <strong className="text-wiki-text dark:text-wiki-text-dark">{visibleTasks.length}</strong>
-                  {' '}of{' '}
-                  <strong className="text-wiki-text dark:text-wiki-text-dark">{tasks.length}</strong>
-                  {' '}task{tasks.length !== 1 ? 's' : ''}
-                </>
-              )}
-            </p>
+            <div className="mt-1.5">
+              <TaskSummary
+                variant="full"
+                loading={loading}
+                visibleCount={visibleTasks.length}
+                totalCount={tasks.length}
+                visiblePoints={visiblePointsTotal}
+                visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+                totalAcquiredPoints={totalAcquiredPoints}
+                completedCount={totalCompletedCount}
+              />
+            </div>
           </div>
           <div className="flex flex-row items-center justify-between md:flex-col md:items-end gap-3 flex-shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-0 border-wiki-border dark:border-wiki-border-dark mt-2 md:mt-0">
             <div className="text-[12px] leading-tight text-wiki-muted dark:text-wiki-muted-dark text-left md:text-right">
@@ -267,6 +285,13 @@ export default function App() {
                 onImport={handleImportForButton}
                 canRevert={canRevert}
                 onRevert={handleRevert}
+                summaryLoading={loading}
+                visibleCount={visibleTasks.length}
+                totalCount={tasks.length}
+                visiblePoints={visiblePointsTotal}
+                visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+                totalAcquiredPoints={totalAcquiredPoints}
+                completedCount={totalCompletedCount}
               />
             </div>
           </>

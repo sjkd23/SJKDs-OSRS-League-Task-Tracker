@@ -87,7 +87,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
                   <WikiIcon
                     src={iconPath}
                     alt={tier}
-                    className="w-[23px] h-[23px] flex-shrink-0"
+                    className="w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0"
                   />
                 )}
                 <span className="tabular-nums text-[12px]">{TIER_POINTS[tier]}</span>
@@ -130,7 +130,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
               <WikiIcon
                 src={iconPath ?? ''}
                 alt={skill}
-                className="w-[28px] h-[28px] flex-shrink-0"
+                className="w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0"
                 fallbackColor={SKILL_FALLBACK_COLOUR}
               />
             );
@@ -150,7 +150,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
               <WikiIcon
                 src={iconPath ?? ''}
                 alt={cat}
-                className="w-[24px] h-[24px] flex-shrink-0"
+                className="w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0"
               />
             );
           }}

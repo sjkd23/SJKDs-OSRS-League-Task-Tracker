@@ -149,6 +149,38 @@ export function useTaskStore() {
     [taskViews, filters, sort],
   );
 
+  // ── Derived point totals ────────────────────────────────────────────────
+
+  /** Total league points across all currently visible tasks. */
+  const visiblePointsTotal = useMemo(
+    () => visibleTasks.reduce((sum, t) => sum + t.points, 0),
+    [visibleTasks],
+  );
+
+  /**
+   * Total league points for visible tasks that are NOT yet completed.
+   * Useful as a "remaining points" indicator for the current filter view.
+   */
+  const visiblePointsExcludingCompleted = useMemo(
+    () => visibleTasks.filter((t) => !t.completed).reduce((sum, t) => sum + t.points, 0),
+    [visibleTasks],
+  );
+
+  /**
+   * Total league points earned from ALL completed tasks across the full
+   * dataset — unaffected by any active filters.
+   */
+  const totalAcquiredPoints = useMemo(
+    () => taskViews.reduce((sum, t) => sum + (t.completed ? t.points : 0), 0),
+    [taskViews],
+  );
+
+  /** Count of ALL completed tasks across the full dataset — unaffected by filters. */
+  const totalCompletedCount = useMemo(
+    () => taskViews.filter((t) => t.completed).length,
+    [taskViews],
+  );
+
   // ── User state mutation ─────────────────────────────────────────────────
 
   const patchUserState = useCallback(
@@ -306,6 +338,14 @@ export function useTaskStore() {
     tasks,
     /** Tasks merged with user state, filtered and sorted for display */
     visibleTasks,
+    /** Total league points for currently visible tasks */
+    visiblePointsTotal,
+    /** Total league points for visible tasks that are not yet completed */
+    visiblePointsExcludingCompleted,
+    /** Total league points earned from all completed tasks (ignores filters) */
+    totalAcquiredPoints,
+    /** Count of all completed tasks (ignores filters) */
+    totalCompletedCount,
     filters,
     sort,
     setFilters,

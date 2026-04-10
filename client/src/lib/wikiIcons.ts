@@ -142,9 +142,9 @@ export function regionIconUrl(area: string): string | undefined {
  */
 export function regionIconClass(area: string, context: 'table' | 'filter'): string {
   if (area === 'Global') {
-    return context === 'table' ? 'w-[22px] h-[22px] flex-shrink-0' : 'w-[21px] h-[21px] flex-shrink-0';
+    return context === 'table' ? 'w-[22px] h-[22px] flex-shrink-0' : 'w-[20px] h-[20px] md:w-[22px] md:h-[22px] flex-shrink-0';
   }
-  return context === 'table' ? 'w-[32px] h-[32px] flex-shrink-0' : 'w-[30px] h-[30px] flex-shrink-0';
+  return context === 'table' ? 'w-[32px] h-[32px] flex-shrink-0' : 'w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0';
 }
 
 /** Returns the local difficulty icon path for `tier`, or undefined if not mapped. */

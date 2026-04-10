@@ -2,6 +2,7 @@ import { memo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppTask, TaskFilters, SortConfig, SortField } from '@/types/task';
 import { TaskFiltersBar } from './TaskFiltersBar';
+import { TaskSummary } from '@/components/TaskSummary/TaskSummary';
 import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 
@@ -15,6 +16,14 @@ interface MobileFilterSortBarProps {
   onImport: (completedIds: string[], todoIds: string[]) => boolean;
   canRevert: boolean;
   onRevert: () => void;
+  // ── Task summary props ──────────────────────────────────────────────────
+  summaryLoading?: boolean;
+  visibleCount: number;
+  totalCount: number;
+  visiblePoints: number;
+  visiblePointsExcludingCompleted: number;
+  totalAcquiredPoints: number;
+  completedCount: number;
 }
 
 export const MobileFilterSortBar = memo(function MobileFilterSortBar({
@@ -27,6 +36,13 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   onImport,
   canRevert,
   onRevert,
+  summaryLoading = false,
+  visibleCount,
+  totalCount,
+  visiblePoints,
+  visiblePointsExcludingCompleted,
+  totalAcquiredPoints,
+  completedCount,
 }: MobileFilterSortBarProps) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -76,6 +92,19 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 mobile-filter-sheet-content">
+        {/* Summary at the top of the filter sheet */}
+        <div className="mb-4 pb-3 border-b border-wiki-border dark:border-wiki-border-dark">
+          <TaskSummary
+            variant="full"
+            loading={summaryLoading}
+            visibleCount={visibleCount}
+            totalCount={totalCount}
+            visiblePoints={visiblePoints}
+            visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+            totalAcquiredPoints={totalAcquiredPoints}
+            completedCount={completedCount}
+          />
+        </div>
         <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} />
         {/* ── Import section ───────────────────────────────────── */}
         <div className="mt-5 pt-4 border-t border-wiki-border dark:border-wiki-border-dark">
@@ -151,7 +180,9 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   );
 
   return (
-    <div className="w-full flex items-center justify-between gap-2">
+    <div className="w-full flex flex-col gap-2">
+      {/* Filter / Sort buttons row */}
+      <div className="flex items-center justify-between gap-2">
       <div className="flex gap-2 flex-1">
         <button
           onClick={() => setFilterOpen(true)}
@@ -196,6 +227,22 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
           <path fillRule="evenodd" d="M8 12a.5.5 0 0 0 .5-.5V5.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 5.707V11.5a.5.5 0 0 0 .5.5z"/>
         </svg>
       </button>
+
+      </div>{/* end buttons row */}
+
+      {/* Compact summary strip — always visible in the sticky bar */}
+      <div className="px-1 pb-0.5">
+        <TaskSummary
+          variant="compact"
+          loading={summaryLoading}
+          visibleCount={visibleCount}
+          totalCount={totalCount}
+          visiblePoints={visiblePoints}
+          visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+          totalAcquiredPoints={totalAcquiredPoints}
+          completedCount={completedCount}
+        />
+      </div>
 
       {filterSheet}
       {sortSheet}

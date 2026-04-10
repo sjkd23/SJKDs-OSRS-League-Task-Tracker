@@ -1,9 +1,9 @@
 import { memo, useMemo } from 'react';
 import type { AppTask, TaskFilters, Tier } from '@/types/task';
-import { uniqueAreas, uniqueSkillsFromRequirements } from '@/utils/taskFilters';
+import { uniqueAreas, uniqueSkillsFromRequirements, UI_CATEGORIES } from '@/utils/taskFilters';
 import { FilterToggleGroup } from './FilterToggleGroup';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
-import { skillIconUrl, regionIconUrl, regionIconClass, difficultyIconUrl, REGION_COLOUR } from '@/lib/wikiIcons';
+import { skillIconUrl, regionIconUrl, regionIconClass, difficultyIconUrl, categoryIconUrl, REGION_COLOUR } from '@/lib/wikiIcons';
 import { TIER_POINTS } from '@/lib/mapScraperTask';
 
 const TIERS: Tier[] = ['Easy', 'Medium', 'Hard', 'Elite', 'Master'];
@@ -26,16 +26,22 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
   }
 
   function reset() {
-    onChange({ ...filters, tiers: [], skills: [], areas: [] });
+    onChange({ ...filters, tiers: [], skills: [], areas: [], categories: [], searchQuery: '' });
   }
 
   const hasActiveFilters =
     filters.tiers.length > 0 ||
     filters.skills.length > 0 ||
-    filters.areas.length > 0;
+    filters.areas.length > 0 ||
+    filters.categories.length > 0 ||
+    filters.searchQuery.trim() !== '';
 
   const activeCount =
-    filters.tiers.length + filters.skills.length + filters.areas.length;
+    filters.tiers.length +
+    filters.skills.length +
+    filters.areas.length +
+    filters.categories.length +
+    (filters.searchQuery.trim() ? 1 : 0);
 
   return (
     <div>
@@ -130,6 +136,50 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
             );
           }}
         />
+
+        {/* Category — icon only (with tooltip), matching Area/Skill style */}
+        <FilterToggleGroup<string>
+          label="Category"
+          options={[...UI_CATEGORIES]}
+          selected={filters.categories}
+          onChange={(categories) => set('categories', categories)}
+          getOptionTitle={(cat) => cat}
+          renderOption={(cat) => {
+            const iconPath = categoryIconUrl(cat);
+            return (
+              <WikiIcon
+                src={iconPath ?? ''}
+                alt={cat}
+                className="w-[24px] h-[24px] flex-shrink-0"
+              />
+            );
+          }}
+        />
+
+        {/* Search bar */}
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-20 flex-shrink-0 text-[11px] font-semibold uppercase tracking-wide text-wiki-muted dark:text-wiki-muted-dark pt-[3px]">
+            Search
+          </span>
+          <input
+            type="search"
+            value={filters.searchQuery}
+            onChange={(e) => set('searchQuery', e.target.value)}
+            placeholder="Search tasks…"
+            aria-label="Search tasks"
+            className="
+              w-full max-w-[240px] sm:max-w-[280px] min-w-0 h-[30px] px-2 py-0
+              text-[13px] text-wiki-text dark:text-wiki-text-dark
+              bg-wiki-article dark:bg-wiki-surface-dark
+              border border-wiki-border dark:border-wiki-border-dark
+              shadow-sm
+              rounded
+              placeholder:text-wiki-muted dark:placeholder:text-wiki-muted-dark
+              focus:outline-none focus:ring-1 focus:ring-wiki-link dark:focus:ring-wiki-link-dark
+              transition-shadow
+            "
+          />
+        </div>
 
         {/* Utility row */}
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-wiki-border dark:border-wiki-border-dark">

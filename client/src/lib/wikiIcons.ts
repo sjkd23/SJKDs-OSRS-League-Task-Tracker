@@ -152,6 +152,26 @@ export function difficultyIconUrl(tier: string): string | undefined {
   return DIFFICULTY_ICON[tier];
 }
 
+// ─── Category icons ──────────────────────────────────────────────────────────
+
+/**
+ * Maps a UI category name to a local asset path under /icons/categories/.
+ */
+export const CATEGORY_ICON: Record<string, string> = {
+  Combat:      '/icons/categories/Combat.png',
+  Skill:       '/icons/categories/Skill.png',
+  Clue:        '/icons/categories/Clue.png',
+  Quest:       '/icons/categories/Quest.png',
+  Achievement: '/icons/categories/Achievement.png',
+  Minigame:    '/icons/categories/Minigame.png',
+  Other:       '/icons/categories/Other.png',
+};
+
+/** Returns the local category icon path for `category`, or undefined if not mapped. */
+export function categoryIconUrl(category: string): string | undefined {
+  return CATEGORY_ICON[category];
+}
+
 // ─── Requirements parser ─────────────────────────────────────────────────────
 
 /**

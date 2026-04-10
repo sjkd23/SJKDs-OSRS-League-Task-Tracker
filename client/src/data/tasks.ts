@@ -1,5 +1,5 @@
 import type { AppTask, Tier } from '@/types/task';
-import { TIER_POINTS } from '@/lib/mapScraperTask';
+import { TIER_POINTS, deriveUICategory } from '@/lib/mapScraperTask';
 
 /**
  * Development seed data — a small realistic sample of Raging Echoes-style tasks.
@@ -42,6 +42,7 @@ function task(
     name,
     description,
     category,
+    uiCategory: deriveUICategory(name, category),
     skill,
     tier,
     tierName: tier,

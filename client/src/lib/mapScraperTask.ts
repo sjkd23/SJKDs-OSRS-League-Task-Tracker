@@ -36,6 +36,27 @@ const TIER_BY_NUMBER: Record<number, Tier> = {
 
 const VALID_TIERS = new Set<string>(Object.keys(TIER_POINTS));
 
+// ─── UI Category derivation ───────────────────────────────────────────────────
+
+/**
+ * The fixed set of UI category values shown in the Category filter.
+ * "Clue" is derived — it does not appear in the raw scraper output.
+ */
+export const UI_CATEGORIES = ['Combat', 'Skill', 'Clue', 'Quest', 'Achievement', 'Minigame', 'Other'] as const;
+export type UICategory = (typeof UI_CATEGORIES)[number];
+
+/**
+ * Derive the UI-facing category for a task.
+ *
+ * Tasks whose name contains "clue" (case-insensitive) are reclassified as
+ * "Clue" so they can be filtered separately from the broader "Minigame"
+ * bucket they typically appear in per the raw scraper data.
+ */
+export function deriveUICategory(name: string, rawCategory: string): string {
+  if (name.toLowerCase().includes('clue')) return 'Clue';
+  return rawCategory;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -60,6 +81,7 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     name: cleanWikiGarbage(raw.name),
     description: cleanWikiGarbage(raw.description),
     category: raw.category,
+    uiCategory: deriveUICategory(raw.name, raw.category),
     // null means the same as "All" in the league data — no specific skill tier
     skill: raw.skill ?? 'All',
     tier,

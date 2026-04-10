@@ -10,6 +10,8 @@ function skillNameFromString(s: string): string {
 }
 
 export function filterTasks(tasks: TaskView[], filters: TaskFilters): TaskView[] {
+  const searchQuery = filters.searchQuery.trim().toLowerCase();
+
   return tasks.filter((task) => {
     if (filters.tiers.length > 0 && !filters.tiers.includes(task.tier)) return false;
     if (filters.skills.length > 0) {
@@ -19,6 +21,11 @@ export function filterTasks(tasks: TaskView[], filters: TaskFilters): TaskView[]
       if (!filters.skills.some((s) => taskSkillNames.includes(s))) return false;
     }
     if (filters.areas.length > 0 && !filters.areas.includes(task.area)) return false;
+    if (filters.categories.length > 0 && !filters.categories.includes(task.uiCategory)) return false;
+    if (searchQuery) {
+      const haystack = `${task.name} ${task.description} ${task.requirementsText}`.toLowerCase();
+      if (!haystack.includes(searchQuery)) return false;
+    }
     if (filters.showOnlyCompleted && !task.completed) return false;
     if (!filters.showCompleted && task.completed) return false;
     if (filters.showTodoOnly && !task.isTodo) return false;
@@ -128,3 +135,12 @@ export function uniqueSkillsFromRequirements(tasks: { skills: string[] }[]): str
   }
   return [...names].sort();
 }
+
+/**
+ * Returns the UI category options that are actually present in the given task
+ * list, preserving the canonical display order defined in `UI_CATEGORIES`.
+ *
+ * Importing UI_CATEGORIES here keeps the ordering consistent everywhere
+ * without duplicating the constant.
+ */
+export { UI_CATEGORIES } from '@/lib/mapScraperTask';

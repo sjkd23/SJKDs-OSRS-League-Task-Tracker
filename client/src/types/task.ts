@@ -35,6 +35,12 @@ export interface AppTask {
   description: string;
   /** Broad category, e.g. "Skilling", "Combat", "Questing" */
   category: string;
+  /**
+   * UI-facing derived category used for the Category filter.
+   * Usually mirrors `category`, except clue-related tasks are reclassified
+   * as "Clue" regardless of their raw `category` value.
+   */
+  uiCategory: string;
   /** Primary skill tag, e.g. "Woodcutting", "General" */
   skill: string;
 
@@ -121,6 +127,10 @@ export interface TaskFilters {
   skills: string[];
   /** Selected area/region names — empty array means "all" */
   areas: string[];
+  /** Selected UI categories — empty array means "all" */
+  categories: string[];
+  /** Case-insensitive substring search across visible task text — empty string means no restriction */
+  searchQuery: string;
   showCompleted: boolean;
   showOnlyCompleted: boolean;
   showTodoOnly: boolean;

@@ -92,7 +92,9 @@ export default function App() {
   const activeFilterCount = useMemo(() => 
     filters.tiers.length +
     filters.skills.length +
-    filters.areas.length,
+    filters.areas.length +
+    filters.categories.length +
+    (filters.searchQuery.trim() ? 1 : 0),
   [filters]);
 
   /** 

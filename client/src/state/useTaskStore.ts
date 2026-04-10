@@ -72,6 +72,8 @@ const DEFAULT_FILTERS: TaskFilters = {
   tiers: [],
   skills: [],
   areas: [],
+  categories: [],
+  searchQuery: '',
   showCompleted: true,
   showOnlyCompleted: false,
   showTodoOnly: false,

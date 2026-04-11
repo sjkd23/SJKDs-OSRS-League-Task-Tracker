@@ -77,6 +77,7 @@ const DEFAULT_FILTERS: TaskFilters = {
   showCompleted: true,
   showOnlyCompleted: false,
   showTodoOnly: false,
+  applyFilterToRoute: false,
 };
 
 const DEFAULT_SORT: SortConfig = {

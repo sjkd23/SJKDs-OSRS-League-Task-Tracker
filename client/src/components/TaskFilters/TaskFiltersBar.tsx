@@ -47,13 +47,13 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
   return (
     <div>
       {/* Strip header row */}
-      <div className="flex items-center justify-between gap-2 mb-2 relative min-h-[32px]">
-        <span className="font-semibold text-[13px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide">
+      <div className="flex items-center justify-between gap-2 mb-2 relative h-8">
+        <span className="font-semibold text-[13px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide shrink-0">
           Filter
         </span>
-        <div className="absolute right-0 flex items-center gap-3">
+        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-3">
           {hasActiveFilters && (
-            <span className="text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark">
+            <span className="text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark whitespace-nowrap">
               {activeCount} filter{activeCount !== 1 ? 's' : ''} active
             </span>
           )}
@@ -63,7 +63,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
                 e.stopPropagation();
                 reset();
               }}
-              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold py-1 px-1 -mr-1"
+              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold py-1 px-1 -mr-1 whitespace-nowrap"
             >
               Reset
             </button>
@@ -141,7 +141,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
         {/* Category — icon only (with tooltip), matching Area/Skill style */}
         <FilterToggleGroup<string>
           label="Category"
-          options={[...UI_CATEGORIES]}
+          options={mode === 'planner' ? [...UI_CATEGORIES, 'Custom tasks'] : [...UI_CATEGORIES]}
           selected={filters.categories}
           onChange={(categories) => set('categories', categories)}
           getOptionTitle={(cat) => cat}
@@ -210,9 +210,16 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
               className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
             />
             Show only completed
-          </label>
+            </label>
 
-          {mode !== 'planner' && (
+            {mode === 'planner' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+                <input type="checkbox" checked={filters.applyFilterToRoute ?? false} onChange={(e) => set('applyFilterToRoute', e.target.checked)} className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90" />
+                Apply filter to route
+              </label>
+            )}
+
+            {mode !== 'planner' && (
             <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
               <input
                 type="checkbox"

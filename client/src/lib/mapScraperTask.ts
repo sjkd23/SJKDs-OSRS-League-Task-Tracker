@@ -60,6 +60,48 @@ export function deriveUICategory(name: string, rawCategory: string): string {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
+ * Normalises an array of RichParts by cleaning wiki garbage and merging
+ * contiguous text parts. This allows us to collapse unwanted double spaces
+ * that arise from text part joining (e.g. from stripped wiki tags) without
+ * breaking legitimate spacing in other fields.
+ */
+function cleanTextParts(parts?: import('@/types/richPart').RichPart[], isRequirements = false): import('@/types/richPart').RichPart[] | undefined {
+  if (!parts) return undefined;
+
+  // First pass: clean wiki garbage
+  const cleaned = parts.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) }));
+
+  // Second pass: merge contiguous text parts
+  const merged: import('@/types/richPart').RichPart[] = [];
+  for (const part of cleaned) {
+    if (merged.length > 0) {
+      const last = merged[merged.length - 1];
+      if (last.type === 'text' && part.type === 'text') {
+        last.text += part.text;
+        continue;
+      }
+    }
+    merged.push({ ...part });
+  }
+
+  // Third pass: collapse double spaces
+  // For requirements: preserve double spaces immediately following a comma, semicolon or colon.
+  return merged.map((p) => {
+    if (p.type === 'text') {
+      if (isRequirements) {
+        p.text = p.text.replace(/ {2,}/g, (match, offset, str) => {
+          const prev = str.substring(0, offset);
+          return /[,;:]\s*$/.test(prev) ? match : ' ';
+        });
+      } else {
+        p.text = p.text.replace(/ {2,}/g, ' ');
+      }
+    }
+    return p;
+  });
+}
+
+/**
  * Convert a single raw scraper task into the app-facing AppTask shape.
  *
  * Handles the real LEAGUE_5 scraper output:
@@ -94,14 +136,9 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     ptsLabel: `${tier} – ${points}`,
     wikiUrl: raw.wikiUrl,
     // ── Rich-text parts: passed through as-is; optional / may be absent ──
-    nameParts: raw.nameParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
-    descriptionParts: raw.descriptionParts?.map((p) => ({ ...p, text: cleanWikiGarbage(p.text) })),
-    requirementsParts: raw.requirementsParts?.map((p) => {
-      // Clean garbage but preserve spaces within parts.
-      // We only trim newlines from the very ends of the parts array if they are just "\n"
-      let text = cleanWikiGarbage(p.text);
-      return { ...p, text };
-    }),
+    nameParts: cleanTextParts(raw.nameParts),
+    descriptionParts: cleanTextParts(raw.descriptionParts),
+    requirementsParts: cleanTextParts(raw.requirementsParts, true),
   };
 }
 

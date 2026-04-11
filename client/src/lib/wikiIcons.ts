@@ -165,6 +165,7 @@ export const CATEGORY_ICON: Record<string, string> = {
   Achievement: '/icons/categories/Achievement.png',
   Minigame:    '/icons/categories/Minigame.png',
   Other:       '/icons/categories/Other.png',
+  'Custom tasks': '/icons/categories/Custom.png',
 };
 
 /** Returns the local category icon path for `category`, or undefined if not mapped. */

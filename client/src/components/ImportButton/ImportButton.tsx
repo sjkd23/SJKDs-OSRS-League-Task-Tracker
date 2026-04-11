@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { AppTask } from '@/types/task';
 import { parsePluginExport } from '@/utils/pluginImport';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
@@ -224,9 +224,12 @@ export function ImportButton({
           </button>
 
           {showHelp && (
-            <div className="absolute left-0 top-6 z-50 w-80 bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark">
-              <p className="font-semibold mb-2 text-wiki-text dark:text-wiki-text-dark">
-                How to import
+            <div className="absolute left-0 top-6 z-50 w-[340px] bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark">
+              <p className="font-semibold mb-2 text-[13px] text-wiki-text dark:text-wiki-text-dark">
+                Import from Tasks Tracker plugin
+              </p>
+              <p className="text-wiki-muted dark:text-wiki-muted-dark mb-2 leading-snug">
+                This shows which tasks you have completed and tracked (optional).
               </p>
               <ol className="list-decimal list-inside pl-1 space-y-1.5 mb-3 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
                 <li>

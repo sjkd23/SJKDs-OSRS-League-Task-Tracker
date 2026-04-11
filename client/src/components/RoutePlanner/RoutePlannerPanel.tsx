@@ -19,11 +19,12 @@ import {
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { TaskView } from '@/types/task';
+import type { TaskView, TaskFilters } from '@/types/task';
 import type { Route, RouteItem, RouteSection } from '@/types/route';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
 import { RichText } from '@/components/RichText/RichText';
 import { RequirementsCell } from '@/components/TaskRow/RequirementsCell';
+import { filterTasks } from '@/utils/taskFilters';
 import {
   regionIconUrl,
   regionIconClass,
@@ -334,6 +335,7 @@ function GripIcon() {
 
 interface RoutePlannerPanelProps {
   route: Route;
+  filters: TaskFilters;
   isRunMode: boolean;
   setIsRunMode: (mode: boolean) => void;
   allTasks: TaskView[];
@@ -715,6 +717,7 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
         className={[
           'px-2 py-1.5 align-middle',
           item.note || editingField === 'note' ? 'text-wiki-text dark:text-wiki-text-dark' : 'text-wiki-muted dark:text-wiki-muted-dark',
+          (!item.note && editingField !== 'note') ? 'req-na-cell' : '',
         ].join(' ')}
       >
         {editingField === 'note' ? (
@@ -751,7 +754,7 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
             {item.note ? (
               <span className="leading-snug">{item.note}</span>
             ) : (
-              <span className="font-medium cursor-default select-none req-na-cell">N/A</span>
+              <span className="font-medium cursor-default select-none">N/A</span>
             )}
             {!isRunMode && (
               <button
@@ -1004,7 +1007,7 @@ function AddCustomTaskRow({ onAdd, onCancel }: AddCustomTaskRowProps) {
 
 interface TableSectionProps {
   section: RouteSection;
-  sectionStart: number;
+  itemIndexMap: Map<string, number>;
   taskMap: Map<string, TaskView>;
   isRunMode: boolean;
   onRemoveTask: (taskId: string) => void;
@@ -1019,7 +1022,7 @@ interface TableSectionProps {
 
 function TableSection({
   section,
-  sectionStart,
+  itemIndexMap,
   taskMap,
   isRunMode,
   onRemoveTask,
@@ -1042,8 +1045,9 @@ function TableSection({
         onRemove={onRemoveSection}
       />
 
-      {!isDraggingSection && section.items.map((item, localIdx) => {
-        const listPos = sectionStart + localIdx;
+      {!isDraggingSection && section.items.map((item) => {
+        if (!itemIndexMap.has(item.taskId)) return null;
+        const listPos = itemIndexMap.get(item.taskId)!;
         if (item.isCustom) {
           return (
             <SortableCustomRow
@@ -1151,6 +1155,7 @@ function SortableSectionChip({ section, isBeingDragged, isRunMode, onJump }: Sor
 
 export function RoutePlannerPanel({
   route,
+  filters,
   isRunMode,
   setIsRunMode,
   allTasks,
@@ -1173,6 +1178,51 @@ export function RoutePlannerPanel({
   const itemCount = allRouteItems.length;
 
   const taskMap = useMemo(() => new Map(allTasks.map((t) => [t.id, t])), [allTasks]);
+
+  const itemIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let globalIndex = 0;
+    for (const section of route.sections) {
+      for (const item of section.items) {
+        const listPos = globalIndex++;
+
+        if (!filters.applyFilterToRoute) {
+          map.set(item.taskId, listPos);
+          continue;
+        }
+
+        let matches = false;
+        if (!item.isCustom) {
+          const task = taskMap.get(item.taskId);
+          if (task) matches = filterTasks([task], filters).length > 0;
+        } else {
+          matches = true;
+          const query = filters.searchQuery.trim().toLowerCase();
+          if (query) {
+            const haystack = `${item.customName ?? ''} ${item.customDescription ?? ''} ${item.note ?? ''}`.toLowerCase();
+            if (!haystack.includes(query)) matches = false;
+          }
+
+          if (matches && filters.categories.length > 0 && !filters.categories.includes('Custom tasks')) matches = false;
+
+          const isExplicitCustom = filters.categories.includes('Custom tasks');
+          if (matches && filters.tiers.length > 0 && !isExplicitCustom) matches = false;
+          if (matches && filters.skills.length > 0 && !isExplicitCustom) matches = false;
+          if (matches && filters.areas.length > 0 && !isExplicitCustom) matches = false;
+
+          if (matches && filters.showOnlyCompleted) matches = false;
+          if (matches && filters.showTodoOnly) matches = false;
+        }
+        
+        if (matches) {
+          map.set(item.taskId, listPos);
+        }
+      }
+    }
+    return map;
+  }, [route.sections, filters, taskMap]);
+
+  const visibleRouteItemIds = useMemo(() => Array.from(itemIndexMap.keys()), [itemIndexMap]);
 
   const totalPoints = useMemo(
     () =>
@@ -1214,6 +1264,18 @@ export function RoutePlannerPanel({
   const [importStatus, setImportStatus] = useState<'idle' | 'success'>('idle');
   const [importError, setImportError] = useState<string | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
+  const [showImportHelp, setShowImportHelp] = useState(false);
+  const importHelpRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (importHelpRef.current && !importHelpRef.current.contains(e.target as Node)) {
+        setShowImportHelp(false);
+      }
+    }
+    if (showImportHelp) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showImportHelp]);
 
   const handleImportOpen = useCallback(async () => {
     setImportError(null);
@@ -1393,17 +1455,6 @@ export function RoutePlannerPanel({
     setConfirmReset(false);
   }, [onResetRoute]);
 
-  // Precompute where each section starts in the flat position list (for # column).
-  const sectionStarts = useMemo(() => {
-    const starts: number[] = [];
-    let offset = 0;
-    for (const s of route.sections) {
-      starts.push(offset);
-      offset += s.items.length;
-    }
-    return starts;
-  }, [route.sections]);
-
   return (
     <div className="border border-wiki-border dark:border-wiki-border-dark text-[13px]">
 
@@ -1437,46 +1488,6 @@ export function RoutePlannerPanel({
               Run Mode
             </button>
           </div>
-
-          {!isRunMode && (
-            addingSectionOpen ? (
-              <div className="flex items-center gap-1 ml-2">
-                <input
-                  ref={newSectionInputRef}
-                  type="text"
-                  value={newSectionName}
-                  onChange={(e) => setNewSectionName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitAddSection();
-                    if (e.key === 'Escape') setAddingSectionOpen(false);
-                  }}
-                  placeholder="Section name…"
-                  maxLength={80}
-                  className="w-36 px-1.5 py-1 text-[12px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/50 dark:placeholder:text-wiki-muted-dark focus:outline-none"
-                />
-                <button
-                  onClick={commitAddSection}
-                  className="px-2 py-1 text-[12px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 transition-opacity"
-                >
-                  Add
-                </button>
-                <button
-                  onClick={() => setAddingSectionOpen(false)}
-                  className="px-1.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddingSectionOpen(true)}
-                title="Add a new section to the route"
-                className="px-3 py-1 ml-2 text-[13px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 active:opacity-80 transition-opacity"
-              >
-                + Section
-              </button>
-            )
-          )}
         </div>
         {/* Right: route management controls */}
         <div className="flex items-center justify-end gap-3 flex-wrap flex-1 ml-auto">
@@ -1485,8 +1496,58 @@ export function RoutePlannerPanel({
               Route: {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {totalPoints} pts
             </span>
           )}
-          {/* Import button with anchored status popup */}
-          <div className="relative">
+
+          <div className="relative flex items-center gap-1.5" ref={importHelpRef}>
+            <button
+              onClick={() => setShowImportHelp((v) => !v)}
+              aria-label="Help with route import"
+              aria-expanded={showImportHelp}
+              className="w-[18px] h-[18px] flex items-center justify-center rounded-full border text-[10px] font-bold leading-none border-wiki-border dark:border-wiki-border-dark bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark hover:border-wiki-link dark:hover:border-wiki-link-dark transition-colors select-none cursor-pointer"
+            >
+              ?
+            </button>
+            {showImportHelp && (
+              <div className="absolute right-0 top-6 z-50 w-[380px] sm:w-[420px] bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark text-left">
+                <p className="font-semibold mb-2 text-[13px] text-wiki-text dark:text-wiki-text-dark">
+                  How to import and export routes
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="font-semibold text-[11px] uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark mb-1">
+                      1. From the Task Tracker plugin
+                    </h4>
+                    <ol className="list-decimal list-inside pl-1 space-y-1 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
+                      <li>Install the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Task Tracker</span> RuneLite plugin by <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Reldo.net</span></li>
+                      <li>Open the plugin and ensure the correct league is selected</li>
+                      <li>Select <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Route</span> in the sort dropdown menu</li>
+                      <li>Select your desired route from the next dropdown menu</li>
+                      <li>Click the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">three dots [...]</span> next to that dropdown</li>
+                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export Active Route to Clipboard</span></li>
+                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import JSON</span> below</li>
+                    </ol>
+                  </div>
+                  <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
+                    <h4 className="font-semibold text-[11px] uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark mb-1">
+                      2. From other route sites
+                    </h4>
+                    <ol className="list-decimal list-inside pl-1 space-y-1 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
+                      <li>Click that site's <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export by plugin/json</span> option</li>
+                      <li>Your route will be copied to your clipboard</li>
+                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import JSON</span> below</li>
+                    </ol>
+                  </div>
+                  <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
+                    <h4 className="font-semibold text-[11px] uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark mb-1">
+                      Exporting for RuneLite
+                    </h4>
+                    <p className="text-wiki-muted dark:text-wiki-muted-dark leading-snug">
+                      Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export JSON</span> to copy your plan. You can import this directly into the Task Tracker RuneLite plugin to see it in-game!
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <button
               onClick={() => void handleImportOpen()}
               title="Import route from clipboard"
@@ -1686,50 +1747,97 @@ export function RoutePlannerPanel({
         </button>
       </div>
 
-      {/* ── Section order bar (drag chips — shown when 2+ sections) ──────── */}
-      {route.sections.length > 1 && (
-        <div className="bg-wiki-article dark:bg-wiki-article-dark px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <DndContext
-              sensors={sectionSensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleSectionDragStart}
-              onDragEnd={handleSectionDragEnd}
-              onDragCancel={handleSectionDragCancel}
-            >
-              <SortableContext
-                items={route.sections.map((s) => s.id)}
-                strategy={horizontalListSortingStrategy}
+      {/* ── Section order bar (drag chips & add section) ──────── */}
+      <div className="bg-wiki-article dark:bg-wiki-article-dark px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {route.sections.length > 0 && (
+              <DndContext
+                sensors={sectionSensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleSectionDragStart}
+                onDragEnd={handleSectionDragEnd}
+                onDragCancel={handleSectionDragCancel}
               >
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {route.sections.map((s) => (
-                    <SortableSectionChip
-                      key={s.id}
-                      section={s}
-                      isRunMode={isRunMode}
-                      isBeingDragged={draggingSectionId === s.id}
-                      onJump={handleSectionJump}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-              <DragOverlay dropAnimation={null}>
-                {draggingSectionId ? (
-                  <div className="flex items-center gap-1.5 rounded border border-wiki-link dark:border-wiki-link-dark bg-wiki-surface dark:bg-wiki-surface-dark text-[12px] text-wiki-text dark:text-wiki-text-dark shadow-md opacity-90 select-none px-2.5 py-1.5">
-                    <GripIcon />
-                    <span className="font-medium">
-                      {route.sections.find((s) => s.id === draggingSectionId)?.name ?? ''}
-                    </span>
+                <SortableContext
+                  items={route.sections.map((s) => s.id)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {route.sections.map((s) => (
+                      <SortableSectionChip
+                        key={s.id}
+                        section={s}
+                        isRunMode={isRunMode}
+                        isBeingDragged={draggingSectionId === s.id}
+                        onJump={handleSectionJump}
+                      />
+                    ))}
                   </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
+                </SortableContext>
+                <DragOverlay dropAnimation={null}>
+                  {draggingSectionId ? (
+                    <div className="flex items-center gap-1.5 rounded border border-wiki-link dark:border-wiki-link-dark bg-wiki-surface dark:bg-wiki-surface-dark text-[12px] text-wiki-text dark:text-wiki-text-dark shadow-md opacity-90 select-none px-2.5 py-1.5">
+                      <GripIcon />
+                      <span className="font-medium">
+                        {route.sections.find((s) => s.id === draggingSectionId)?.name ?? ''}
+                      </span>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+
+            {!isRunMode && (
+              addingSectionOpen ? (
+                <div className="flex items-center gap-1 ml-1">
+                  <input
+                    ref={newSectionInputRef}
+                    type="text"
+                    value={newSectionName}
+                    onChange={(e) => setNewSectionName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitAddSection();
+                      if (e.key === 'Escape') setAddingSectionOpen(false);
+                    }}
+                    placeholder="Section name…"
+                    maxLength={80}
+                    className="w-36 px-1.5 py-1 text-[12px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/50 dark:placeholder:text-wiki-muted-dark focus:outline-none"
+                  />
+                  <button
+                    onClick={commitAddSection}
+                    className="px-2 py-1 text-[12px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 transition-opacity"
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={() => setAddingSectionOpen(false)}
+                    className="px-1.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setAddingSectionOpen(true)}
+                  title="Add a new section to the route"
+                  className="px-2 py-1 ml-1 text-[12px] border border-dashed border-wiki-link dark:border-wiki-link-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors flex items-center gap-1"
+                >
+                  <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M8 2a1 1 0 0 0-1 1v4H3a1 1 0 1 0 0 2h4v4a1 1 0 1 0 2 0V9h4a1 1 0 1 0 0-2H9V3a1 1 0 0 0-1-1Z"/>
+                  </svg>
+                  Section
+                </button>
+              )
+            )}
+          </div>
+          {route.sections.length > 1 && (
             <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark whitespace-nowrap flex-shrink-0 italic">
               Drag handle to reorder &middot; click section name to jump
             </span>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ── Validation / status banners ──────────────────────────────────── */}
       {/* ── Empty state ──────────────────────────────────────────────────── */}
@@ -1772,15 +1880,15 @@ export function RoutePlannerPanel({
                 </tr>
               </thead>
               <SortableContext
-                items={allRouteItems.map((i) => i.taskId)}
+                items={visibleRouteItemIds}
                 strategy={verticalListSortingStrategy}
               >
                 <tbody>
-                  {route.sections.map((section, sIdx) => (
+                  {route.sections.map((section) => (
                     <TableSection
                       key={section.id}
                       section={section}
-                      sectionStart={sectionStarts[sIdx] ?? 0}
+                                            itemIndexMap={itemIndexMap}
                       taskMap={taskMap}
                       isRunMode={isRunMode}
                       onRemoveTask={onRemoveTask}

@@ -436,7 +436,8 @@ export default function App() {
         {appMode === 'planner' && !loading && (
           <div id="route-planner" className="mt-3 pb-3">
             <RoutePlannerPanel
-              route={route}                isRunMode={isRunMode}
+              route={route}
+              filters={filters}                isRunMode={isRunMode}
                 setIsRunMode={setIsRunMode}              allTasks={allTaskViews}
               onUpdateRouteName={updateRouteName}
               onRemoveTask={removeTaskFromRoute}

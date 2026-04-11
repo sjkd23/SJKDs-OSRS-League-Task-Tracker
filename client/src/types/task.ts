@@ -134,6 +134,7 @@ export interface TaskFilters {
   showCompleted: boolean;
   showOnlyCompleted: boolean;
   showTodoOnly: boolean;
+  applyFilterToRoute: boolean;
 }
 
 // ─── Sort State ───────────────────────────────────────────────────────────────

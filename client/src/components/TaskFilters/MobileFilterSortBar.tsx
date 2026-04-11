@@ -17,7 +17,7 @@ interface MobileFilterSortBarProps {
   onImport: (completedIds: string[], todoIds: string[]) => boolean;
   canRevert: boolean;
   onRevert: () => void;
-  // ── Task summary props ──────────────────────────────────────────────────
+  // â”€â”€ Task summary props â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   summaryLoading?: boolean;
   visibleCount: number;
   totalCount: number;
@@ -108,7 +108,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
           />
         </div>
         <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} mode={mode} />
-        {/* ── Import section — tracker mode only ──────────────── */}
+        {/* â”€â”€ Import section â€” tracker mode only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {mode !== 'planner' && (
         <div className="mt-5 pt-4 border-t border-wiki-border dark:border-wiki-border-dark">
           <ImportButton
@@ -239,7 +239,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
 
       </div>{/* end buttons row */}
 
-      {/* Compact summary strip — always visible in the sticky bar */}
+      {/* Compact summary strip â€” always visible in the sticky bar */}
       <div className="px-1 pb-0.5">
         <TaskSummary
           variant="compact"

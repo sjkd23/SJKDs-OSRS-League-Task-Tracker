@@ -15,9 +15,10 @@ interface TaskFiltersBarProps {
   tasks: AppTask[];
   filters: TaskFilters;
   onChange: (filters: TaskFilters) => void;
+  mode?: 'tracker' | 'planner';
 }
 
-export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onChange }: TaskFiltersBarProps) {
+export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onChange, mode = 'tracker' }: TaskFiltersBarProps) {
   const areas = useMemo(() => uniqueAreas(tasks), [tasks]);
   const skills = useMemo(() => uniqueSkillsFromRequirements(tasks), [tasks]);
 
@@ -211,15 +212,17 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
             Show only completed
           </label>
 
-          <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
-            <input
-              type="checkbox"
-              checked={filters.showTodoOnly}
-              onChange={(e) => set('showTodoOnly', e.target.checked)}
-              className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
-            />
-            To-do only
-          </label>
+          {mode !== 'planner' && (
+            <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+              <input
+                type="checkbox"
+                checked={filters.showTodoOnly}
+                onChange={(e) => set('showTodoOnly', e.target.checked)}
+                className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
+              />
+              To-do only
+            </label>
+          )}
         </div>
 
       </div>

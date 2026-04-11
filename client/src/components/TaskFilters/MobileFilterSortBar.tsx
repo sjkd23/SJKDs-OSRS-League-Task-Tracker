@@ -12,6 +12,7 @@ interface MobileFilterSortBarProps {
   sort: SortConfig;
   onFiltersChange: (filters: TaskFilters) => void;
   onSortChange: (field: SortField) => void;
+  mode?: 'tracker' | 'planner';
   activeCount: number;
   onImport: (completedIds: string[], todoIds: string[]) => boolean;
   canRevert: boolean;
@@ -32,6 +33,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   sort,
   onFiltersChange,
   onSortChange,
+  mode = 'tracker',
   activeCount,
   onImport,
   canRevert,
@@ -105,8 +107,9 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
             completedCount={completedCount}
           />
         </div>
-        <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} />
-        {/* ── Import section ───────────────────────────────────── */}
+        <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} mode={mode} />
+        {/* ── Import section — tracker mode only ──────────────── */}
+        {mode !== 'planner' && (
         <div className="mt-5 pt-4 border-t border-wiki-border dark:border-wiki-border-dark">
           <ImportButton
             tasks={tasks}
@@ -121,6 +124,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
             onImport={(completedIds, todoIds) => onImport(completedIds, todoIds)}
           />
         </div>
+        )}
       </div>
     </div>,
     document.body

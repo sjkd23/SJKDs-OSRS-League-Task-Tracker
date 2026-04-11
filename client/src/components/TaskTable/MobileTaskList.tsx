@@ -19,6 +19,10 @@ interface MobileTaskListProps {
   onSortChange: (field: SortField) => void;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  // ── Route Planner additions ────────────────────────────────────────────
+  mode?: 'tracker' | 'planner';
+  taskIdsInRoute?: Set<string>;
+  onAddToRoute?: (id: string) => void;
 }
 
 /** Returns true when a requirements string is effectively empty / not applicable. */
@@ -31,10 +35,15 @@ const MobileTaskCard = memo(function MobileTaskCard({
   task,
   onToggleCompleted,
   onToggleTodo,
+  mode = 'tracker',
+  onAddToRoute,
 }: {
   task: TaskView;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  mode?: 'tracker' | 'planner';
+  isInRoute?: boolean;
+  onAddToRoute?: (id: string) => void;
 }) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
@@ -149,29 +158,43 @@ const MobileTaskCard = memo(function MobileTaskCard({
 
       {/* ACTIONS */}
       <div className="flex items-stretch divide-x divide-wiki-border dark:divide-wiki-border-dark/50 border-t border-wiki-border dark:border-wiki-border-dark/50">
-        <button
-          onClick={() => onToggleCompleted(task.id)}
-          className={[
-            'flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation',
-            task.completed
-              ? 'hover:bg-white/20 dark:hover:bg-black/20 text-[#2a502a] dark:text-[#9bc89b]'
-              : 'hover:bg-black/5 dark:hover:bg-white/5 text-wiki-text dark:text-wiki-text-dark'
-          ].join(' ')}
-        >
-          {task.completed ? '✓ Completed' : 'Mark Complete'}
-        </button>
-        <button
-          onClick={() => onToggleTodo(task.id)}
-          className={[
-            'flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation flex items-center justify-center gap-1.5',
-            task.completed
-              ? 'hover:bg-white/20 dark:hover:bg-black/20'
-              : 'hover:bg-black/5 dark:hover:bg-white/5',
-            task.isTodo && !task.completed ? 'text-blue-700 dark:text-blue-400' : ''
-          ].join(' ')}
-        >
-          {task.isTodo ? '★ Pinned' : '☆ To-do'}
-        </button>
+        {mode === 'planner' ? (
+          // Route Planner: single Add-to-route action.
+          // Tasks already in the route are excluded from this list entirely.
+          <button
+            onClick={() => onAddToRoute?.(task.id)}
+            className="flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation flex items-center justify-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-wiki-text dark:text-wiki-text-dark"
+          >
+            ⊕ Add to Route
+          </button>
+        ) : (
+          // Task Tracker: normal complete + to-do actions
+          <>
+            <button
+              onClick={() => onToggleCompleted(task.id)}
+              className={[
+                'flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation',
+                task.completed
+                  ? 'hover:bg-white/20 dark:hover:bg-black/20 text-[#2a502a] dark:text-[#9bc89b]'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5 text-wiki-text dark:text-wiki-text-dark'
+              ].join(' ')}
+            >
+              {task.completed ? '✓ Completed' : 'Mark Complete'}
+            </button>
+            <button
+              onClick={() => onToggleTodo(task.id)}
+              className={[
+                'flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation flex items-center justify-center gap-1.5',
+                task.completed
+                  ? 'hover:bg-white/20 dark:hover:bg-black/20'
+                  : 'hover:bg-black/5 dark:hover:bg-white/5',
+                task.isTodo && !task.completed ? 'text-blue-700 dark:text-blue-400' : ''
+              ].join(' ')}
+            >
+              {task.isTodo ? '★ Pinned' : '☆ To-do'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -183,6 +206,9 @@ export function MobileTaskList({
   // onSortChange,
   onToggleCompleted,
   onToggleTodo,
+  mode = 'tracker',
+  taskIdsInRoute,
+  onAddToRoute,
 }: MobileTaskListProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -250,6 +276,9 @@ export function MobileTaskList({
                 task={tasks[virtualRow.index]}
                 onToggleCompleted={onToggleCompleted}
                 onToggleTodo={onToggleTodo}
+                mode={mode}
+                isInRoute={taskIdsInRoute?.has(tasks[virtualRow.index].id)}
+                onAddToRoute={onAddToRoute}
               />
             </div>
           ))}

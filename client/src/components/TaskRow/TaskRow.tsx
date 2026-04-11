@@ -38,6 +38,12 @@ export interface TaskRowProps {
   rowIndex: number;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  // ── Route Planner props (unused in tracker mode) ─────────────────
+  mode?: 'tracker' | 'planner';
+  /** Whether this task already exists in the active route. */
+  isInRoute?: boolean;
+  /** Called when the user clicks the Add-to-route button. Phase 1+. */
+  onAddToRoute?: (id: string) => void;
 }
 
 /** Returns true when a requirements string is effectively empty / not applicable. */
@@ -46,17 +52,19 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo }: TaskRowProps) {
+export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', onAddToRoute }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
+  const isPlanner = mode === 'planner';
 
   /**
    * Row-level click handler for completion toggle.
-   * Ignored when the click originates from an interactive child element
-   * (links, buttons, inputs) to prevent accidental toggling.
+   * Ignored in Route Planner mode — only explicit planner controls perform actions.
+   * Also ignored when the click originates from an interactive child element.
    */
   function handleRowClick(e: React.MouseEvent<HTMLTableRowElement>) {
+    if (isPlanner) return;
     const target = e.target as HTMLElement;
     if (target.closest('a, button, input, [role="button"]')) return;
     onToggleCompleted(task.id);
@@ -66,12 +74,18 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
   // the same visual rhythm as the old :nth-child(odd) rule (child 1 = index 0).
   const stripeClass = rowIndex % 2 === 0 ? 'row-alt' : '';
 
+  // In planner mode: keep task-completed styling (informational) but drop
+  // task-completable (which implies the row click does something).
+  const completionClass = task.completed
+    ? 'task-completed'
+    : isPlanner ? '' : 'task-completable';
+
   return (
     <tr
-      className={[task.completed ? 'task-completed' : 'task-completable', stripeClass].filter(Boolean).join(' ')}
+      className={[completionClass, stripeClass].filter(Boolean).join(' ')}
       onClick={handleRowClick}
-      style={{ cursor: 'pointer' }}
-      aria-label={task.completed ? `${task.name} — completed` : `${task.name} — click to mark complete`}
+      style={{ cursor: isPlanner ? 'default' : 'pointer' }}
+      aria-label={isPlanner ? task.name : (task.completed ? `${task.name} — completed` : `${task.name} — click to mark complete`)}
     >
       {/* Area — region icon; clickable for named regions, plain for Global */}
       <td className="px-2 py-1.5 text-center align-middle">
@@ -173,31 +187,48 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
         </div>
       </td>
 
-      {/* To-do — entire cell is the click target; no inner box */}
+      {/* Action cell — To-do bookmark in tracker mode; Add-to-route in planner mode */}
       <td className="p-0 align-middle">
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggleTodo(task.id); }}
-          title={task.isTodo ? 'Remove from To-do list' : 'Add to To-do list'}
-          aria-label={task.isTodo ? 'Remove from To-do list' : 'Add to To-do list'}
-          aria-pressed={task.isTodo}
-          className={[
-            'w-full flex items-center justify-center py-2 transition-colors',
-            task.isTodo
-              ? 'text-wiki-link dark:text-wiki-link-dark bg-wiki-link/10 dark:bg-wiki-link-dark/10'
-              : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark',
-          ].join(' ')}
-        >
-          <svg
-            viewBox="0 0 12 14"
-            fill={task.isTodo ? 'currentColor' : 'none'}
-            stroke="currentColor"
-            strokeWidth="1.4"
-            className="w-[18px] h-[21px]"
-            aria-hidden="true"
+        {isPlanner ? (
+          // Route Planner: + button to add this task to the active route.
+          // Tasks already in the route are excluded from this list entirely,
+          // so the button is always active here.
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddToRoute?.(task.id); }}
+            title="Add to route"
+            aria-label={`Add ${task.name} to route`}
+            className="w-full flex items-center justify-center py-2 transition-colors text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark"
           >
-            <path d="M2 1h8a1 1 0 0 1 1 1v11l-5-3-5 3V2a1 1 0 0 1 1-1Z" />
-          </svg>
-        </button>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-[16px] h-[16px]" aria-hidden="true">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
+          </button>
+        ) : (
+          // Task Tracker: standard To-do bookmark toggle
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleTodo(task.id); }}
+            title={task.isTodo ? 'Remove from To-do list' : 'Add to To-do list'}
+            aria-label={task.isTodo ? 'Remove from To-do list' : 'Add to To-do list'}
+            aria-pressed={task.isTodo}
+            className={[
+              'w-full flex items-center justify-center py-2 transition-colors',
+              task.isTodo
+                ? 'text-wiki-link dark:text-wiki-link-dark bg-wiki-link/10 dark:bg-wiki-link-dark/10'
+                : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark',
+            ].join(' ')}
+          >
+            <svg
+              viewBox="0 0 12 14"
+              fill={task.isTodo ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth="1.4"
+              className="w-[18px] h-[21px]"
+              aria-hidden="true"
+            >
+              <path d="M2 1h8a1 1 0 0 1 1 1v11l-5-3-5 3V2a1 1 0 0 1 1-1Z" />
+            </svg>
+          </button>
+        )}
       </td>
     </tr>
   );

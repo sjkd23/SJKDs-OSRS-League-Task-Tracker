@@ -51,7 +51,7 @@ export const TaskSummary = memo(function TaskSummary({
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-wiki-muted dark:text-wiki-muted-dark">
                     <span>
                         <strong className="font-bold text-wiki-text dark:text-wiki-text-dark">{fmt(visibleCount)}</strong>
-                        <span> / {fmt(totalCount)} tasks</span>s
+                        <span> / {fmt(totalCount)} tasks</span>
                     </span>
 
                     <span className="text-[16px] leading-none text-wiki-text dark:text-wiki-text-dark opacity-40 select-none" aria-hidden>&bull;</span>

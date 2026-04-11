@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+﻿import { useState, useRef, useEffect } from 'react';
 import type { AppTask } from '@/types/task';
 import { parsePluginExport } from '@/utils/pluginImport';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
@@ -27,8 +27,12 @@ interface ImportButtonProps {
 
 export function ImportButton({
   tasks,
-  pasteValue,
-  onPasteChange,
+  // pasteValue / onPasteChange kept in interface for API compatibility but not
+  // used by the primary clipboard flow; the fallback textarea uses local state.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  pasteValue: _pasteValue,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onPasteChange: _onPasteChange,
   importTracked,
   onImportTrackedChange,
   status,
@@ -68,7 +72,6 @@ export function ImportButton({
   }, [importTracked]);
 
   // Auto-dismiss success messages after a short delay.
-  // Error messages are left for the user to clear by editing the textarea.
   useEffect(() => {
     if (status.type !== 'success') return;
 
@@ -98,15 +101,14 @@ export function ImportButton({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showHelp]);
 
-  function handleImport() {
-    if (!pasteValue.trim()) return;
-
+  /** Core import logic — parses text and applies via onImport. Returns true on success. */
+  function doImport(text: string): boolean {
     let raw: unknown;
     try {
-      raw = JSON.parse(pasteValue);
+      raw = JSON.parse(text);
     } catch {
       onStatusChange({ type: 'error', message: 'Pasted text is not valid JSON.' });
-      return;
+      return false;
     }
 
     let result;
@@ -117,7 +119,7 @@ export function ImportButton({
         type: 'error',
         message: err instanceof Error ? err.message : 'Failed to parse export.',
       });
-      return;
+      return false;
     }
 
     const totalInteracted = result.totalCompleted + result.totalTracked;
@@ -126,26 +128,25 @@ export function ImportButton({
         type: 'error',
         message: 'No completed or tracked tasks found in this export.',
       });
-      return;
+      return false;
     }
 
     const effectiveTodos = importTracked ? result.matchedTodos : [];
 
     if (result.matchedCompleted.length === 0 && effectiveTodos.length === 0) {
       if (result.matchedTodos.length > 0 && !importTracked) {
-        // Tracked tasks present but checkbox is unchecked — expected behavior, no message needed
-        return;
+        // Tracked tasks present but checkbox is unchecked — expected behavior.
+        return true;
       }
       const noun = totalInteracted === 1 ? 'task' : 'tasks';
       onStatusChange({
         type: 'error',
         message: `${totalInteracted} ${noun} found in export but none matched tasks in this list.`,
       });
-      return;
+      return false;
     }
 
     const changed = onImport(result.matchedCompleted, effectiveTodos);
-    onPasteChange('');
     onStatusChange({
       type: 'success',
       completedCount: result.matchedCompleted.length,
@@ -153,6 +154,35 @@ export function ImportButton({
       unmatched: result.unmatchedStructIds.length,
       noChanges: !changed,
     });
+    return true;
+  }
+
+  /** Primary action: read from clipboard and import. Shows an error message on failure. */
+  async function handleClipboardImport() {
+    onStatusChange({ type: 'idle' });
+    let clipText = '';
+    let clipboardFailed = false;
+    try {
+      if (navigator.clipboard?.readText) {
+        clipText = (await navigator.clipboard.readText()).trim();
+      } else {
+        clipboardFailed = true;
+      }
+    } catch {
+      clipboardFailed = true;
+    }
+
+    if (clipboardFailed || !clipText) {
+      onStatusChange({
+        type: 'error',
+        message: clipboardFailed
+          ? 'Clipboard unavailable — copy your Task Tracker export first.'
+          : 'Clipboard was empty — copy your Task Tracker export first.',
+      });
+      return;
+    }
+
+    doImport(clipText);
   }
 
   return (
@@ -207,7 +237,7 @@ export function ImportButton({
                   Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export</span> at the bottom
                   of the plugin panel in RuneLite.
                 </li>
-                <li>Paste the exported text into the box below and click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import</span>.</li>
+                <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import from Clipboard</span> below.</li>
               </ol>
               <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
                 <p className="font-semibold mb-1 text-wiki-text dark:text-wiki-text-dark">
@@ -225,69 +255,41 @@ export function ImportButton({
         </div>
       </div>
 
-      {/* Paste textarea — always visible */}
-      <textarea
-        value={pasteValue}
-        onChange={(e) => {
-          onPasteChange(e.target.value);
-          if (status.type === 'error') onStatusChange({ type: 'idle' });
-        }}
-        placeholder="Paste Plugin Data Here"
-        rows={2}
-        spellCheck={false}
-        className={[
-          'w-full',
-          'text-[13px] font-mono leading-relaxed',
-          'border',
-          status.type === 'error'
-            ? 'border-red-400 dark:border-red-500'
-            : 'border-wiki-border dark:border-wiki-border-dark focus:border-wiki-link dark:focus:border-wiki-link-dark',
-          'bg-white dark:bg-wiki-article-dark',
-          'text-wiki-text dark:text-wiki-text-dark',
-          'placeholder:text-wiki-muted dark:placeholder:text-wiki-muted-dark placeholder:opacity-75',
-          'p-2 resize-none min-h-[40px]',
-          'focus:outline-none focus:ring-1 focus:ring-wiki-link/30 dark:focus:ring-wiki-link-dark/30',
-          'transition-colors',
-        ].join(' ')}
-      />
-
-      {/* Combined: checkbox + actions */}
-      <div className="flex items-center justify-between gap-2">
-        <label className="flex items-center gap-1.5 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark">
-          <input
-            type="checkbox"
-            checked={importTracked}
-            onChange={(e) => onImportTrackedChange(e.target.checked)}
-            className="w-3.5 h-3.5 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer"
-          />
-          Import tracked
-        </label>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {canRevert && (
-            <button
-              onClick={onRevert}
-              className="text-[12px] text-wiki-link dark:text-wiki-link-dark hover:underline select-none"
-            >
-              Revert
-            </button>
-          )}
+      {/* Import button row */}
+      <div className="flex items-center gap-2">
+        {canRevert && (
           <button
-            onClick={handleImport}
-            disabled={!pasteValue.trim()}
-            className={[
-              'px-3 py-1.5',
-              'border border-wiki-link dark:border-wiki-link-dark',
-              'bg-wiki-link dark:bg-wiki-link-dark',
-              'text-[13px] text-white dark:text-wiki-bg-dark font-semibold',
-              'hover:opacity-90 active:opacity-80',
-              'disabled:opacity-40 disabled:pointer-events-none',
-              'select-none leading-snug transition-opacity',
-            ].join(' ')}
+            onClick={onRevert}
+            className="text-[12px] text-wiki-link dark:text-wiki-link-dark hover:underline select-none"
           >
-            Import
+            Revert
           </button>
-        </div>
+        )}
+        <button
+          onClick={() => void handleClipboardImport()}
+          className={[
+            'px-3 py-1.5',
+            'border border-wiki-link dark:border-wiki-link-dark',
+            'bg-wiki-link dark:bg-wiki-link-dark',
+            'text-[13px] text-white dark:text-wiki-bg-dark font-semibold',
+            'hover:opacity-90 active:opacity-80',
+            'select-none leading-snug transition-opacity',
+          ].join(' ')}
+        >
+          Import from Clipboard
+        </button>
       </div>
+
+      {/* Checkbox row */}
+      <label className="flex items-center gap-1.5 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark">
+        <input
+          type="checkbox"
+          checked={importTracked}
+          onChange={(e) => onImportTrackedChange(e.target.checked)}
+          className="w-3.5 h-3.5 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer"
+        />
+        Import tracked tasks
+      </label>
 
       {/* Overwrite warning — only briefly visible after enabling */}
       {showOverwriteWarning && (

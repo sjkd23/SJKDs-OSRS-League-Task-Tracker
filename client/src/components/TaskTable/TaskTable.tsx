@@ -3,14 +3,6 @@ import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { TaskView, SortConfig, SortField } from '@/types/task';
 import { TaskRow } from '@/components/TaskRow/TaskRow';
 
-interface TaskTableProps {
-  tasks: TaskView[];
-  sort: SortConfig;
-  onSortChange: (field: SortField) => void;
-  onToggleCompleted: (id: string) => void;
-  onToggleTodo: (id: string) => void;
-}
-
 interface Column {
   label: string;
   field: SortField;
@@ -36,6 +28,10 @@ interface TaskTableProps {
   onSortChange: (field: SortField) => void;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  // ── Route Planner additions ────────────────────────────────────────────
+  mode?: 'tracker' | 'planner';
+  taskIdsInRoute?: Set<string>;
+  onAddToRoute?: (id: string) => void;
 }
 
 export function TaskTable({
@@ -44,6 +40,9 @@ export function TaskTable({
   onSortChange,
   onToggleCompleted,
   onToggleTodo,
+  mode = 'tracker',
+  taskIdsInRoute,
+  onAddToRoute,
 }: TaskTableProps) {
   const tableWrapperRef = useRef<HTMLDivElement>(null);
 
@@ -83,20 +82,26 @@ export function TaskTable({
           <tr>
             {COLUMNS.map(({ label, field, className }) => {
               const isSorted = sort.field === field;
+              // In planner mode, the last column is an add-to-route action.
+              // It has no meaningful sort order, so clicking it does nothing.
+              const isPlannerActionCol = field === 'isTodo' && mode === 'planner';
+              const colLabel = isPlannerActionCol ? 'Add' : label;
               return (
                 <th
                   key={label}
-                  onClick={() => onSortChange(field)}
+                  onClick={isPlannerActionCol ? undefined : () => onSortChange(field)}
                   style={{ top: 'var(--sticky-offset, 0px)' }}
                   className={[
                     'sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark shadow-[0_1px_0_rgba(0,0,0,0.05)]',
                     'px-2 py-2 font-semibold whitespace-nowrap text-center transition-colors',
-                    'cursor-pointer select-none hover:text-wiki-link dark:hover:text-wiki-link-dark',
+                    isPlannerActionCol
+                      ? 'cursor-default'
+                      : 'cursor-pointer select-none hover:text-wiki-link dark:hover:text-wiki-link-dark',
                     className ?? '',
                   ].join(' ')}
                 >
-                  {label}
-                  {isSorted && (
+                  {colLabel}
+                  {!isPlannerActionCol && isSorted && (
                     <span className="ml-1 text-[10px] opacity-70">
                       {sort.direction === 'asc' ? '▲' : '▼'}
                     </span>
@@ -133,6 +138,9 @@ export function TaskTable({
                   rowIndex={virtualRow.index}
                   onToggleCompleted={onToggleCompleted}
                   onToggleTodo={onToggleTodo}
+                  mode={mode}
+                  isInRoute={taskIdsInRoute?.has(tasks[virtualRow.index].id)}
+                  onAddToRoute={onAddToRoute}
                 />
               ))}
               {paddingBottom > 0 && (

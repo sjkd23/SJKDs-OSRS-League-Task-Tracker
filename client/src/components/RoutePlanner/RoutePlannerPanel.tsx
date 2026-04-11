@@ -1,0 +1,1670 @@
+﻿import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+  type Modifier,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  horizontalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import type { TaskView } from '@/types/task';
+import type { Route, RouteItem, RouteSection } from '@/types/route';
+import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
+import { RichText } from '@/components/RichText/RichText';
+import { RequirementsCell } from '@/components/TaskRow/RequirementsCell';
+import {
+  regionIconUrl,
+  regionIconClass,
+  difficultyIconUrl,
+  regionWikiUrl,
+  REGION_COLOUR
+} from '@/lib/wikiIcons';
+import { TIER_COLOURS } from '@/components/TaskRow/TaskRow';
+import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
+
+// ─── Drag modifier ─────────────────────────────────────────────────────────────
+
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+});
+
+// ─── Export / Import helpers ───────────────────────────────────────────────────
+
+function isNaReqs(text: string | undefined): boolean {
+  const t = text?.trim();
+  return !t || t === 'N/A' || t === '—' || t === '-';
+}
+
+function buildExportPayload(route: Route, allTasks: TaskView[]) {
+  const taskMap = new Map<string, number>();
+  for (const t of allTasks) {
+    taskMap.set(t.id, t.structId);
+  }
+
+  return {
+    id: route.id,
+    name: route.name.trim(),
+    taskType: CURRENT_LEAGUE.pluginTaskType,
+    author: route.author ?? '',
+    description: route.description ?? '',
+    completed: [] as number[],
+    sections: route.sections.map((section) => ({
+      id: section.id,
+      name: section.name,
+      description: section.description ?? '',
+      items: section.items.map((item) => {
+        if (item.isCustom) {
+          return {
+            taskId: null,
+            customItem: {
+              id: item.taskId,
+              label: item.customName ?? '',
+              description: item.customDescription ?? item.customName ?? '',
+            },
+            ...(item.note ? { note: item.note } : {}),
+          };
+        }
+        let numericId = taskMap.get(item.taskId);
+        if (numericId === undefined) {
+          const match = item.taskId.match(/^task-(\d+)/);
+          numericId = match ? parseInt(match[1], 10) : 0;
+        }
+        return {
+          taskId: numericId,
+          ...(item.note ? { note: item.note } : {}),
+        };
+      }),
+    })),
+  };
+}
+
+function parsePluginRoute(
+  jsonText: string,
+  allTasks: TaskView[],
+): { ok: true; route: Route; imported: number; customCount: number; unmapped: number } | { ok: false; error: string } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch {
+    return { ok: false, error: 'Invalid JSON — could not parse the text.' };
+  }
+
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { ok: false, error: 'Expected a JSON object at the top level.' };
+  }
+
+  const obj = raw as Record<string, unknown>;
+
+  if (typeof obj.name !== 'string' || !obj.name.trim()) {
+    return { ok: false, error: 'Route is missing a valid "name" field.' };
+  }
+
+  if (!Array.isArray(obj.sections) || obj.sections.length === 0) {
+    return { ok: false, error: 'Route is missing a valid "sections" array.' };
+  }
+
+  const structIdToAppId = new Map<number, string>();
+  for (const t of allTasks) {
+    structIdToAppId.set(t.structId, t.id);
+  }
+
+  let unmapped = 0;
+  let customCount = 0;
+  let imported = 0;
+
+  const parsedSections: RouteSection[] = [];
+
+  for (const rawSection of obj.sections as unknown[]) {
+    const s =
+      typeof rawSection === 'object' && rawSection !== null
+        ? (rawSection as Record<string, unknown>)
+        : {};
+    const rawItems = Array.isArray(s.items) ? s.items : [];
+    const sectionName =
+      typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Main';
+
+    const sectionItems: RouteItem[] = [];
+
+    for (const rawItem of rawItems) {
+      if (typeof rawItem !== 'object' || rawItem === null) continue;
+      const it = rawItem as Record<string, unknown>;
+
+      const rawTaskId = it.taskId;
+      const numericId =
+        typeof rawTaskId === 'number'
+          ? rawTaskId
+          : typeof rawTaskId === 'string'
+            ? parseInt(rawTaskId, 10)
+            : NaN;
+
+      if (!isNaN(numericId)) {
+        const appId = structIdToAppId.get(numericId);
+        if (appId) {
+          sectionItems.push({
+            taskId: appId,
+            ...(typeof it.note === 'string' && it.note ? { note: it.note } : {}),
+          });
+          imported++;
+          continue;
+        }
+      }
+
+      const rawCustomItem =
+        typeof it.customItem === 'object' && it.customItem !== null
+          ? (it.customItem as Record<string, unknown>)
+          : null;
+      const pluginLabel =
+        rawCustomItem && typeof rawCustomItem.label === 'string'
+          ? rawCustomItem.label.trim()
+          : '';
+      if (pluginLabel) {
+        const stableId =
+          rawCustomItem && typeof rawCustomItem.id === 'string' && rawCustomItem.id
+            ? rawCustomItem.id
+            : crypto.randomUUID();
+        // Read description from customItem.description, fallback to label for backwards compat
+        const pluginDescription =
+          rawCustomItem && typeof rawCustomItem.description === 'string'
+            ? rawCustomItem.description.trim()
+            : pluginLabel;
+        sectionItems.push({
+          taskId: stableId,
+          isCustom: true,
+          customName: pluginLabel,
+          customDescription: pluginDescription || pluginLabel,
+          ...(typeof it.note === 'string' && it.note ? { note: it.note } : {}),
+        });
+        customCount++;
+        imported++;
+        continue;
+      }
+
+      const legacyName = typeof it.name === 'string' ? it.name.trim() : '';
+      if (legacyName) {
+        sectionItems.push({
+          taskId: crypto.randomUUID(),
+          isCustom: true,
+          customName: legacyName,
+          customDescription: legacyName,
+          ...(typeof it.note === 'string' && it.note ? { note: it.note } : {}),
+        });
+        customCount++;
+        imported++;
+        continue;
+      }
+
+      unmapped++;
+    }
+
+    parsedSections.push({
+      id: crypto.randomUUID(),
+      name: sectionName,
+      description: '',
+      items: sectionItems,
+    });
+  }
+
+  const newRoute: Route = {
+    id: typeof obj.id === 'string' ? obj.id : crypto.randomUUID(),
+    name: (obj.name as string).trim(),
+    taskType:
+      typeof obj.taskType === 'string' ? obj.taskType : CURRENT_LEAGUE.pluginTaskType,
+    author: typeof obj.author === 'string' ? obj.author : '',
+    description: typeof obj.description === 'string' ? obj.description : '',
+    completed: false,
+    sections:
+      parsedSections.length > 0
+        ? parsedSections
+        : [{ id: crypto.randomUUID(), name: 'Main', description: '', items: [] }],
+  };
+
+  return { ok: true, route: newRoute, imported, customCount, unmapped };
+}
+
+// ─── Scroll offset helper ─────────────────────────────────────────────────────
+
+/**
+ * Returns the current bottom edge of the app's main fixed sticky header, in px
+ * from the top of the viewport. Measured live via getBoundingClientRect so it is
+ * accurate during filter-panel animations and regardless of CSS-variable state.
+ * Falls back to --sticky-offset if the element isn't found.
+ */
+function getAppStickyBottom(): number {
+  const bar = document.querySelector('[data-app-sticky-header]') as HTMLElement | null;
+  if (bar) {
+    const rect = bar.getBoundingClientRect();
+    // Return the FULL height, not the current visible bottom (rect.bottom).
+    // When the user starts a jump from the top of the page, the bar is hidden
+    // (-translate-y-full) so rect.bottom is <= 0. If we return 0, the target
+    // scrolls to the very top. Then, as it scrolls past 300px, the header
+    // magically slides down and covers the target. rect.height tells us exactly
+    // how much space the bar WILL occupy once scrolled.
+    return rect.height;
+  }
+  
+  // Mobile fallback (mobile handles stickiness intrinsically or via .sticky)
+  const mobileBar = document.querySelector('.sticky.z-40.shadow-sm') as HTMLElement | null;
+  if (mobileBar) {
+    return mobileBar.getBoundingClientRect().height;
+  }
+  
+  return (
+    parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue('--sticky-offset').trim(),
+    ) || 0
+  );
+}
+
+// ─── Local save/load helpers ──────────────────────────────────────────────────
+
+const SAVED_ROUTES_KEY = 'osrs-lt:saved-routes';
+
+type SavedRouteEntry = { name: string; savedAt: string; route: Route };
+
+function loadSavedRoutes(): SavedRouteEntry[] {
+  try {
+    const raw = localStorage.getItem(SAVED_ROUTES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as SavedRouteEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistSavedRoutes(entries: SavedRouteEntry[]): void {
+  localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(entries));
+}
+
+// ─── Small icon helpers ────────────────────────────────────────────────────────
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3" aria-hidden="true">
+      <path d="M9.5.5a1.7 1.7 0 0 1 2 2L4 10l-3 .5L1.5 7.5 9.5.5z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg viewBox="0 0 12 12" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+      <path d="M10.5 1.5 6 6l4.5 4.5-1 1L6 7 1.5 11.5l-1-1L5 6 1.5 1.5l1-1L6 5l4.5-4.5z" />
+    </svg>
+  );
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 10 16" fill="currentColor" className="w-2.5 h-4" aria-hidden="true">
+      <circle cx="3" cy="3" r="1.3" />
+      <circle cx="7" cy="3" r="1.3" />
+      <circle cx="3" cy="8" r="1.3" />
+      <circle cx="7" cy="8" r="1.3" />
+      <circle cx="3" cy="13" r="1.3" />
+      <circle cx="7" cy="13" r="1.3" />
+    </svg>
+  );
+}
+
+// ─── Component types ───────────────────────────────────────────────────────────
+
+interface RoutePlannerPanelProps {
+  route: Route;
+  allTasks: TaskView[];
+  onUpdateRouteName: (name: string) => void;
+  onRemoveTask: (taskId: string) => void;
+  onReorderItems: (fromIndex: number, toIndex: number) => void;
+  onReorderSections: (fromIndex: number, toIndex: number) => void;
+  onResetRoute: () => void;
+  onReplaceRoute: (newRoute: Route) => void;
+  onAddCustomTask: (sectionId: string, name: string) => void;
+  onEditCustomTask: (taskId: string, field: 'label' | 'description', value: string) => void;
+  onAddSection: (name: string) => void;
+  onRenameSection: (sectionId: string, name: string) => void;
+  onRemoveSection: (sectionId: string) => void;
+}
+
+// ─── Sortable row (real task) ─────────────────────────────────────────────────
+
+interface SortableRowProps {
+  item: RouteItem;
+  task: TaskView;
+  listPos: number;
+  onRemove: (taskId: string) => void;
+}
+
+function SortableRow({ item, task, listPos, onRemove }: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.taskId });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 2 : undefined,
+  };
+
+  const stripeClass = listPos % 2 === 0 ? 'row-alt' : '';
+  const completionClass = task.completed ? 'task-completed' : '';
+  const reqIsNa = isNaReqs(task.requirementsText);
+  const regionIcon = regionIconUrl(task.area);
+  const regionColor = REGION_COLOUR[task.area];
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={[completionClass, stripeClass, 'cursor-grab active:cursor-grabbing'].filter(Boolean).join(' ')}
+      {...attributes}
+      {...listeners}
+    >
+      <td className="px-1 py-1.5 align-middle w-12">
+        <div className="flex items-center justify-center">
+          <span className="text-[12px] font-semibold tabular-nums leading-none text-wiki-text dark:text-wiki-text-dark">
+            {listPos + 1}
+          </span>
+        </div>
+      </td>
+
+      <td className="px-2 py-1.5 text-center align-middle">
+        <span className="flex items-center justify-center">
+          {(() => {
+            const areaUrl = regionWikiUrl(task.area);
+            const icon = (
+              <WikiIcon
+                src={regionIcon ?? ''}
+                alt={task.area}
+                className={regionIconClass(task.area, 'table')}
+                fallbackColor={regionColor}
+              />
+            );
+            if (areaUrl) {
+              return (
+                <a
+                  href={areaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  title={task.area}
+                  className="inline-flex items-center no-underline hover:opacity-80"
+                >
+                  {icon}
+                </a>
+              );
+            }
+            return icon;
+          })()}
+        </span>
+      </td>
+
+      <td className="px-2 py-1.5 align-middle">
+        {task.nameParts && task.nameParts.length > 0 ? (
+          <div onPointerDown={(e) => { if (e.target instanceof HTMLAnchorElement) e.stopPropagation(); }}>
+            <RichText parts={task.nameParts} />
+          </div>
+        ) : task.wikiUrl ? (
+          <a
+            href={task.wikiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark"
+          >
+            {task.name}
+          </a>
+        ) : (
+          <span>{task.name}</span>
+        )}
+      </td>
+
+      <td className="px-2 py-1.5 text-wiki-text dark:text-wiki-text-dark leading-snug align-middle">
+        {task.descriptionParts && task.descriptionParts.length > 0 ? (
+          <div onPointerDown={(e) => { if (e.target instanceof HTMLAnchorElement) e.stopPropagation(); }}>
+            <RichText parts={task.descriptionParts} />
+          </div>
+        ) : (
+          task.description
+        )}
+      </td>
+
+      <td
+        className={[
+          'px-2 py-1.5 text-wiki-text dark:text-wiki-text-dark align-middle',
+          reqIsNa ? 'req-na-cell' : '',
+        ].join(' ')}
+      >
+        <div onPointerDown={(e) => { if (e.target instanceof HTMLAnchorElement) e.stopPropagation(); }}>
+          <RequirementsCell
+            requirementsText={task.requirementsText}
+            requirementsParts={task.requirementsParts}
+          />
+        </div>
+      </td>
+
+      <td className="p-0 align-middle whitespace-nowrap">
+        <div className="flex items-center justify-center gap-1 px-1 py-1.5">
+          {difficultyIconUrl(task.tier) && (
+            <WikiIcon
+              src={difficultyIconUrl(task.tier)!}
+              alt={task.tier}
+              className="w-[18px] h-[18px] flex-shrink-0"
+            />
+          )}
+          <span className={`tabular-nums font-medium ${TIER_COLOURS[task.tier] ?? ''}`}>
+            {task.points}
+          </span>
+        </div>
+      </td>
+
+      <td className="p-0 align-middle text-center w-16">
+        <button
+          onClick={() => onRemove(item.taskId)}
+          onPointerDown={(e) => e.stopPropagation()}
+          title={`Remove "${task.name}" from route`}
+          aria-label={`Remove "${task.name}" from route`}
+          className="flex items-center justify-center w-full h-full py-2 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+        >
+          <XIcon />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Sortable custom row ───────────────────────────────────────────────────────
+
+interface SortableCustomRowProps {
+  item: RouteItem;
+  listPos: number;
+  onRemove: (taskId: string) => void;
+  onEdit: (taskId: string, field: 'label' | 'description', value: string) => void;
+}
+
+function SortableCustomRow({ item, listPos, onRemove, onEdit }: SortableCustomRowProps) {
+  const [editingField, setEditingField] = useState<'label' | 'description' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.taskId });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 2 : undefined,
+  };
+
+  useEffect(() => {
+    if (editingField) {
+      setEditValue(
+        editingField === 'label'
+          ? (item.customName ?? '')
+          : (item.customDescription ?? ''),
+      );
+      // Defer focus so the input is rendered before we try to focus it
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+    }
+  }, [editingField, item.customName, item.customDescription]);
+
+  const commitEdit = () => {
+    if (!editingField) return;
+    const trimmed = editValue.trim();
+    if (trimmed) {
+      onEdit(item.taskId, editingField, trimmed);
+    }
+    setEditingField(null);
+  };
+
+  const cancelEdit = () => setEditingField(null);
+
+  const stripeClass = listPos % 2 === 0 ? 'row-alt' : '';
+  const displayName = item.customName ?? '(custom task)';
+  const displayDesc = item.customDescription ?? '';
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={[stripeClass, editingField ? '' : 'cursor-grab active:cursor-grabbing'].filter(Boolean).join(' ')}
+      {...attributes}
+      {...(editingField ? {} : listeners)}
+    >
+      {/* # */}
+      <td className="px-1 py-1.5 align-middle w-12">
+        <div className="flex items-center justify-center">
+          <span className="text-[12px] font-semibold tabular-nums leading-none text-wiki-text dark:text-wiki-text-dark">
+            {listPos + 1}
+          </span>
+        </div>
+      </td>
+
+      {/* Area */}
+      <td className="px-2 py-1.5 text-center align-middle">
+        <span className="flex items-center justify-center">
+          <WikiIcon
+            src="/icons/areas/Custom.png"
+            alt="Custom"
+            className="w-[22px] h-[22px] flex-shrink-0"
+          />
+        </span>
+      </td>
+
+      {/* Name / Label */}
+      <td className="px-2 py-1.5 align-middle">
+        {editingField === 'label' ? (
+          <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitEdit();
+                if (e.key === 'Escape') cancelEdit();
+              }}
+              maxLength={120}
+              className="flex-1 min-w-0 px-1.5 py-0.5 text-[12px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
+            />
+            <button
+              onClick={commitEdit}
+              title="Save label"
+              className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity flex-shrink-0"
+            >
+              Save
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors flex-shrink-0"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            <span className="text-wiki-text dark:text-wiki-text-dark">{displayName}</span>
+            <button
+              onClick={() => setEditingField('label')}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={`Edit label "${displayName}"`}
+              aria-label={`Edit label "${displayName}"`}
+              className="flex items-center justify-center p-0.5 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors cursor-pointer flex-shrink-0"
+            >
+              <PencilIcon />
+            </button>
+          </div>
+        )}
+      </td>
+
+      {/* Task / Description */}
+      <td className="px-2 py-1.5 align-middle">
+        {editingField === 'description' ? (
+          <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitEdit();
+                if (e.key === 'Escape') cancelEdit();
+              }}
+              placeholder="Task description…"
+              maxLength={200}
+              className="flex-1 min-w-0 px-1.5 py-0.5 text-[12px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/60 dark:placeholder:text-wiki-muted-dark focus:outline-none"
+            />
+            <button
+              onClick={commitEdit}
+              title="Save description"
+              className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity flex-shrink-0"
+            >
+              Save
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors flex-shrink-0"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1">
+            {displayDesc ? (
+              <span className="text-wiki-text dark:text-wiki-text-dark leading-snug">{displayDesc}</span>
+            ) : (
+              <span className="text-wiki-muted dark:text-wiki-muted-dark italic">—</span>
+            )}
+            <button
+              onClick={() => setEditingField('description')}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Edit task description"
+              aria-label="Edit task description"
+              className="flex items-center justify-center p-0.5 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors cursor-pointer flex-shrink-0"
+            >
+              <PencilIcon />
+            </button>
+          </div>
+        )}
+      </td>
+
+      {/* Requirements — N/A for custom tasks */}
+      <td className="px-2 py-1.5 text-wiki-muted dark:text-wiki-muted-dark align-middle req-na-cell">
+        N/A
+      </td>
+
+      {/* Points — not applicable */}
+      <td className="p-0 align-middle whitespace-nowrap">
+        <div className="flex items-center justify-center gap-1 px-1 py-1.5">
+          <span className="tabular-nums text-wiki-muted dark:text-wiki-muted-dark">-</span>
+        </div>
+      </td>
+
+      {/* Actions */}
+      <td className="p-0 align-middle text-center w-16">
+        <div className="flex items-center justify-center px-1 py-1.5">
+          <button
+            onClick={() => onRemove(item.taskId)}
+            onPointerDown={(e) => e.stopPropagation()}
+            title={`Remove "${displayName}" from route`}
+            aria-label={`Remove "${displayName}" from route`}
+            className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+          >
+            <XIcon />
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Section header row ────────────────────────────────────────────────────────
+
+interface SectionHeaderRowProps {
+  section: RouteSection;
+  itemCount: number;
+  taskMap: Map<string, TaskView>;
+  onRename: (sectionId: string, name: string) => void;
+  onRemove: (sectionId: string) => void;
+}
+
+function SectionHeaderRow({ section, itemCount, taskMap, onRename, onRemove }: SectionHeaderRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(section.name);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const sectionPoints = useMemo(
+    () =>
+      section.items.reduce((sum, item) => {
+        if (item.isCustom) return sum;
+        const task = taskMap.get(item.taskId);
+        return sum + (task?.points ?? 0);
+      }, 0),
+    [section.items, taskMap],
+  );
+
+  useEffect(() => {
+    if (editing) {
+      setEditName(section.name);
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing, section.name]);
+
+  const commitRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== section.name) onRename(section.id, trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <tr id={`route-section-${section.id}`}>
+      <td
+        colSpan={7}
+        className="px-3 py-1 bg-wiki-mid dark:bg-wiki-mid-dark border-y border-wiki-border dark:border-wiki-border-dark select-none"
+      >
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              maxLength={80}
+              className="flex-1 max-w-[220px] px-1.5 py-0.5 text-[12px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
+            />
+            <button
+              onClick={commitRename}
+              className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark">
+                {section.name}
+              </span>
+              <button
+                onClick={() => setEditing(true)}
+                title={`Rename section "${section.name}"`}
+                aria-label={`Rename section "${section.name}"`}
+                className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors"
+              >
+                <PencilIcon />
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {!confirmRemove && itemCount > 0 && (
+                <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
+                  {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {sectionPoints} pts
+                </span>
+              )}
+              {confirmRemove ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-wiki-text dark:text-wiki-text-dark whitespace-nowrap">
+                    Remove{itemCount > 0 ? ` (${itemCount} task${itemCount !== 1 ? 's' : ''})` : ''}?
+                  </span>
+                  <button
+                    onClick={() => { onRemove(section.id); setConfirmRemove(false); }}
+                    className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-red-600 dark:bg-red-700 hover:opacity-80 transition-opacity"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    onClick={() => setConfirmRemove(false)}
+                    className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (itemCount === 0) {
+                      onRemove(section.id);
+                    } else {
+                      setConfirmRemove(true);
+                    }
+                  }}
+                  title={`Remove section "${section.name}"`}
+                  aria-label={`Remove section "${section.name}"`}
+                  className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                >
+                  <XIcon />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ─── Add custom task row (inline form) ────────────────────────────────────────
+
+interface AddCustomTaskRowProps {
+  onAdd: (name: string) => void;
+  onCancel: () => void;
+}
+
+function AddCustomTaskRow({ onAdd, onCancel }: AddCustomTaskRowProps) {
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const commit = () => {
+    const trimmed = name.trim();
+    if (trimmed) onAdd(trimmed);
+  };
+
+  return (
+    <tr className="bg-wiki-surface dark:bg-wiki-surface-dark">
+      <td
+        colSpan={7}
+        className="px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark"
+      >
+        <div className="flex items-center gap-2">
+          <WikiIcon
+            src="/icons/areas/Custom.png"
+            alt="Custom"
+            className="w-[22px] h-[22px] flex-shrink-0"
+          />
+          <input
+            ref={inputRef}
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit();
+              if (e.key === 'Escape') onCancel();
+            }}
+            placeholder="Custom task name…"
+            maxLength={120}
+            className="flex-1 max-w-sm px-2 py-1.5 text-[13px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/60 dark:placeholder:text-wiki-muted-dark focus:outline-none"
+          />
+          <button
+            onClick={commit}
+            disabled={!name.trim()}
+            className="px-2.5 py-1 text-[12px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-2.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ─── Table section (section header + its rows) ────────────────────────────────
+
+interface TableSectionProps {
+  section: RouteSection;
+  sectionStart: number;
+  taskMap: Map<string, TaskView>;
+  onRemoveTask: (taskId: string) => void;
+  onEditCustomTask: (taskId: string, field: 'label' | 'description', value: string) => void;
+  onRenameSection: (sectionId: string, name: string) => void;
+  onRemoveSection: (sectionId: string) => void;
+  addingCustomToSection: string | null;
+  setAddingCustomToSection: (id: string | null) => void;
+  onAddCustomConfirm: (sectionId: string, name: string) => void;
+  isDraggingSection: boolean;
+}
+
+function TableSection({
+  section,
+  sectionStart,
+  taskMap,
+  onRemoveTask,
+  onEditCustomTask,
+  onRenameSection,
+  onRemoveSection,
+  addingCustomToSection,
+  setAddingCustomToSection,
+  onAddCustomConfirm,
+  isDraggingSection,
+}: TableSectionProps) {
+  return (
+    <>
+      <SectionHeaderRow
+        section={section}
+        itemCount={section.items.length}
+        taskMap={taskMap}
+        onRename={onRenameSection}
+        onRemove={onRemoveSection}
+      />
+
+      {!isDraggingSection && section.items.map((item, localIdx) => {
+        const listPos = sectionStart + localIdx;
+        if (item.isCustom) {
+          return (
+            <SortableCustomRow
+              key={item.taskId}
+              item={item}
+              listPos={listPos}
+              onRemove={onRemoveTask}
+              onEdit={onEditCustomTask}
+            />
+          );
+        }
+        const task = taskMap.get(item.taskId);
+        if (!task) return null;
+        return (
+          <SortableRow
+            key={item.taskId}
+            item={item}
+            task={task}
+            listPos={listPos}
+            onRemove={onRemoveTask}
+          />
+        );
+      })}
+
+      {!isDraggingSection && (addingCustomToSection === section.id ? (
+        <AddCustomTaskRow
+          onAdd={(name) => onAddCustomConfirm(section.id, name)}
+          onCancel={() => setAddingCustomToSection(null)}
+        />
+      ) : (
+        <tr>
+          <td
+            colSpan={7}
+            className="px-3 py-1 bg-wiki-article dark:bg-wiki-article-dark border-b border-wiki-border dark:border-wiki-border-dark"
+          >
+            <button
+              onClick={() => setAddingCustomToSection(section.id)}
+              className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors"
+            >
+              + Custom task
+            </button>
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+// ─── Sortable section chip (for horizontal section reorder bar) ───────────────
+
+interface SortableSectionChipProps {
+  section: RouteSection;
+  isBeingDragged: boolean;
+  onJump: (sectionId: string) => void;
+}
+
+function SortableSectionChip({ section, isBeingDragged, onJump }: SortableSectionChipProps) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: section.id,
+  });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isBeingDragged ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className="flex items-center rounded border border-wiki-border dark:border-wiki-border-dark bg-wiki-surface dark:bg-wiki-surface-dark text-[12px] text-wiki-text dark:text-wiki-text-dark select-none touch-none overflow-hidden"
+    >
+      <span
+        {...listeners}
+        className="flex items-center px-1.5 py-1.5 text-wiki-muted dark:text-wiki-muted-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark border-r border-wiki-border dark:border-wiki-border-dark cursor-grab active:cursor-grabbing transition-colors"
+        title="Drag to reorder sections"
+        aria-label="Drag handle"
+      >
+        <GripIcon />
+      </span>
+      <button
+        type="button"
+        onClick={() => onJump(section.id)}
+        className="px-2.5 py-1.5 font-medium hover:text-wiki-link dark:hover:text-wiki-link-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors cursor-pointer"
+        title={`Jump to "${section.name}" section`}
+        aria-label={`Jump to ${section.name} section`}
+      >
+        {section.name}
+        <span className="ml-1.5 font-normal text-[11px] text-wiki-muted dark:text-wiki-muted-dark">
+          ({section.items.length})
+        </span>
+      </button>
+    </div>
+  );
+}
+
+// ─── Main panel ────────────────────────────────────────────────────────────────
+
+export function RoutePlannerPanel({
+  route,
+  allTasks,
+  onUpdateRouteName,
+  onRemoveTask,
+  onReorderItems,
+  onReorderSections,
+  onResetRoute,
+  onReplaceRoute,
+  onAddCustomTask,
+  onEditCustomTask,
+  onAddSection,
+  onRenameSection,
+  onRemoveSection,
+}: RoutePlannerPanelProps) {
+  const allRouteItems = useMemo(
+    () => route.sections.flatMap((s) => s.items),
+    [route.sections],
+  );
+  const itemCount = allRouteItems.length;
+
+  const taskMap = useMemo(() => new Map(allTasks.map((t) => [t.id, t])), [allTasks]);
+
+  const totalPoints = useMemo(
+    () =>
+      allRouteItems.reduce((sum, item) => {
+        if (item.isCustom) return sum;
+        const task = taskMap.get(item.taskId);
+        return sum + (task?.points ?? 0);
+      }, 0),
+    [allRouteItems, taskMap],
+  );
+
+  // ── Export state ───────────────────────────────────────────────────────────
+  const [exportStatus, setExportStatus] = useState<'idle' | 'copied'>('idle');
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExport = useCallback(async () => {
+    setExportStatus('idle');
+    if (!route.name.trim()) {
+      setExportError('Route name cannot be blank before exporting.');
+      return;
+    }
+    if (itemCount === 0) {
+      setExportError('Add at least one task before exporting.');
+      return;
+    }
+    setExportError(null);
+    const payload = buildExportPayload(route, allTasks);
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      setExportStatus('copied');
+      setTimeout(() => setExportStatus((s) => (s === 'copied' ? 'idle' : s)), 3000);
+    } catch {
+      setExportError('Clipboard unavailable — could not copy the route.');
+    }
+  }, [route, itemCount, allTasks]);
+
+  // ── Import state ───────────────────────────────────────────────────────────
+  const [importStatus, setImportStatus] = useState<'idle' | 'success'>('idle');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importInfo, setImportInfo] = useState<string | null>(null);
+
+  const handleImportOpen = useCallback(async () => {
+    setImportError(null);
+    setImportInfo(null);
+    let clipboardText = '';
+    try {
+      if (navigator.clipboard?.readText) {
+        clipboardText = (await navigator.clipboard.readText()).trim();
+      }
+    } catch {
+      // Permission denied or unavailable.
+    }
+    if (!clipboardText) {
+      setImportError('Clipboard was empty or unavailable — copy a route export first.');
+      return;
+    }
+    const result = parsePluginRoute(clipboardText, allTasks);
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    onReplaceRoute(result.route);
+    const infoParts: string[] = [];
+    const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
+    infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
+    if (result.unmapped > 0) {
+      infoParts.push(`skipped ${result.unmapped} unrecognized item${result.unmapped !== 1 ? 's' : ''}`);
+    }
+    setImportInfo(infoParts.join(', ') + '.');
+    setImportStatus('success');
+    setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
+  }, [allTasks, onReplaceRoute]);
+
+  // ── Local save/load state ──────────────────────────────────────────────────
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
+  const [loadMenuOpen, setLoadMenuOpen] = useState(false);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRouteEntry[]>(loadSavedRoutes);
+  const loadMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!loadMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (loadMenuRef.current && !loadMenuRef.current.contains(e.target as Node)) {
+        setLoadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [loadMenuOpen]);
+
+  const handleSaveRoute = useCallback(() => {
+    const name = route.name.trim() || 'Untitled Route';
+    const now = new Date().toISOString();
+    setSavedRoutes((prev) => {
+      const filtered = prev.filter((en) => en.name !== name);
+      const next: SavedRouteEntry[] = [{ name, savedAt: now, route }, ...filtered];
+      persistSavedRoutes(next);
+      return next;
+    });
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus((s) => (s === 'saved' ? 'idle' : s)), 2000);
+  }, [route]);
+
+  const handleLoadRoute = useCallback((entry: SavedRouteEntry) => {
+    onReplaceRoute(entry.route);
+    setLoadMenuOpen(false);
+  }, [onReplaceRoute]);
+
+  const handleDeleteSaved = useCallback((name: string) => {
+    setSavedRoutes((prev) => {
+      const next = prev.filter((en) => en.name !== name);
+      persistSavedRoutes(next);
+      return next;
+    });
+  }, []);
+
+  // ── Add section inline state ───────────────────────────────────────────────
+  const [addingSectionOpen, setAddingSectionOpen] = useState(false);
+  const [newSectionName, setNewSectionName] = useState('');
+  const newSectionInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (addingSectionOpen) {
+      setNewSectionName('');
+      newSectionInputRef.current?.focus();
+    }
+  }, [addingSectionOpen]);
+
+  const commitAddSection = useCallback(() => {
+    onAddSection(newSectionName.trim() || 'New Section');
+    setAddingSectionOpen(false);
+    setNewSectionName('');
+  }, [newSectionName, onAddSection]);
+
+  // ── Add custom task inline state ───────────────────────────────────────────
+  const [addingCustomToSection, setAddingCustomToSection] = useState<string | null>(null);
+
+  const handleAddCustomConfirm = useCallback(
+    (sectionId: string, name: string) => {
+      onAddCustomTask(sectionId, name);
+      setAddingCustomToSection(null);
+    },
+    [onAddCustomTask],
+  );
+
+  // ── DnD setup (item reorder) ───────────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIndex = allRouteItems.findIndex((i) => i.taskId === active.id);
+      const newIndex = allRouteItems.findIndex((i) => i.taskId === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) onReorderItems(oldIndex, newIndex);
+    },
+    [allRouteItems, onReorderItems],
+  );
+
+  // ── DnD setup (section reorder) ────────────────────────────────────────────
+  const [isDraggingSection, setIsDraggingSection] = useState(false);
+  const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
+
+  const sectionSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleSectionDragStart = useCallback((event: DragStartEvent) => {
+    setIsDraggingSection(true);
+    setDraggingSectionId(event.active.id as string);
+  }, []);
+
+  const handleSectionDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setIsDraggingSection(false);
+      setDraggingSectionId(null);
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const oldIdx = route.sections.findIndex((s) => s.id === active.id);
+      const newIdx = route.sections.findIndex((s) => s.id === over.id);
+      if (oldIdx !== -1 && newIdx !== -1) onReorderSections(oldIdx, newIdx);
+    },
+    [route.sections, onReorderSections],
+  );
+
+  const handleSectionDragCancel = useCallback(() => {
+    setIsDraggingSection(false);
+    setDraggingSectionId(null);
+  }, []);
+
+  const handleSectionJump = useCallback((sectionId: string) => {
+    const el = document.getElementById(`route-section-${sectionId}`);
+    if (!el) return;
+    // Measure the actual visible bottom of the app's fixed sticky header.
+    const appStickyBottom = getAppStickyBottom();
+    // Also account for the Route Planner table's own sticky <thead>.
+    const tableHead = el.closest('table')?.querySelector('thead');
+    const tableHeadHeight = tableHead ? tableHead.getBoundingClientRect().height : 0;
+    const elementTop = window.scrollY + el.getBoundingClientRect().top;
+    window.scrollTo({
+      top: Math.max(0, elementTop - appStickyBottom - tableHeadHeight - 8),
+      behavior: 'smooth',
+    });
+  }, []);
+
+  // ── Reset route confirmation state ─────────────────────────────────────────
+  const [confirmReset, setConfirmReset] = useState(false);
+  const handleResetConfirm = useCallback(() => {
+    onResetRoute();
+    setConfirmReset(false);
+  }, [onResetRoute]);
+
+  // Precompute where each section starts in the flat position list (for # column).
+  const sectionStarts = useMemo(() => {
+    const starts: number[] = [];
+    let offset = 0;
+    for (const s of route.sections) {
+      starts.push(offset);
+      offset += s.items.length;
+    }
+    return starts;
+  }, [route.sections]);
+
+  return (
+    <div className="border border-wiki-border dark:border-wiki-border-dark text-[13px]">
+
+      {/* ── Panel header ─────────────────────────────────────────────────── */}
+      <div className="bg-wiki-mid dark:bg-wiki-mid-dark px-3 py-2 flex items-center justify-between border-b border-wiki-border dark:border-wiki-border-dark flex-wrap gap-y-2">
+        {/* Left: title + primary planner-building action */}
+        <div className="flex items-center gap-3">
+          <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">
+            Route Planner
+          </span>
+          {addingSectionOpen ? (
+            <div className="flex items-center gap-1">
+              <input
+                ref={newSectionInputRef}
+                type="text"
+                value={newSectionName}
+                onChange={(e) => setNewSectionName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitAddSection();
+                  if (e.key === 'Escape') setAddingSectionOpen(false);
+                }}
+                placeholder="Section name…"
+                maxLength={80}
+                className="w-36 px-1.5 py-1 text-[12px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/50 dark:placeholder:text-wiki-muted-dark focus:outline-none"
+              />
+              <button
+                onClick={commitAddSection}
+                className="px-2 py-1 text-[12px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 transition-opacity"
+              >
+                Add
+              </button>
+              <button
+                onClick={() => setAddingSectionOpen(false)}
+                className="px-1.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setAddingSectionOpen(true)}
+              title="Add a new section to the route"
+              className="px-3 py-1 text-[13px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 active:opacity-80 transition-opacity"
+            >
+              + Section
+            </button>
+          )}
+        </div>
+        {/* Right: route management controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {itemCount > 0 && (
+            <span className="text-wiki-muted dark:text-wiki-muted-dark text-[12px] tabular-nums">
+              {itemCount} task{itemCount !== 1 ? 's' : ''} · {totalPoints} pts
+            </span>
+          )}
+          {/* Import button with anchored status popup */}
+          <div className="relative">
+            <button
+              onClick={() => void handleImportOpen()}
+              title="Import route from clipboard"
+              className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+            >
+              Import JSON
+            </button>
+            {importStatus === 'success' && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] flex items-start gap-2 max-w-xs">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-green-700 dark:text-green-400" aria-hidden="true">
+                  <path d="M10 2 4.5 8.5 2 6l-1 1 3.5 3.5 6.5-7.5z"/>
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <span className="text-green-700 dark:text-green-400">Route imported from clipboard.</span>
+                  {importInfo && (
+                    <span className="block text-amber-700 dark:text-amber-400 mt-0.5">{importInfo}</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => { setImportStatus('idle'); setImportInfo(null); }}
+                  className="flex-shrink-0 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {importError && importStatus !== 'success' && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] flex items-start gap-2 max-w-xs">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" aria-hidden="true">
+                  <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+                </svg>
+                <span className="flex-1 text-red-600 dark:text-red-400">{importError}</span>
+                <button
+                  onClick={() => setImportError(null)}
+                  className="flex-shrink-0 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Export button with anchored status popup */}
+          <div className="relative">
+            <button
+              onClick={() => void handleExport()}
+              title="Copy route JSON to clipboard"
+              className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+            >
+              Export JSON
+            </button>
+            {exportError && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] text-red-600 dark:text-red-400 flex items-start gap-2 max-w-xs">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
+                  <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+                </svg>
+                <span className="flex-1">{exportError}</span>
+                <button
+                  onClick={() => setExportError(null)}
+                  className="flex-shrink-0 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {exportStatus === 'copied' && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] text-green-700 dark:text-green-400 flex items-center gap-2 whitespace-nowrap">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0" aria-hidden="true">
+                  <path d="M10 2 4.5 8.5 2 6l-1 1 3.5 3.5 6.5-7.5z"/>
+                </svg>
+                Route JSON copied to clipboard.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Route name field ────────────────────────────────────────────── */}
+      <div className="bg-wiki-surface dark:bg-wiki-surface-dark px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-2 flex-wrap">
+        <label
+          htmlFor="route-name-input"
+          className="font-semibold whitespace-nowrap text-wiki-text dark:text-wiki-text-dark"
+        >
+          Route name:
+        </label>
+        <input
+          id="route-name-input"
+          type="text"
+          value={route.name}
+          onChange={(e) => {
+            onUpdateRouteName(e.target.value);
+            if (exportError) setExportError(null);
+          }}
+          maxLength={80}
+          placeholder="New Route"
+          className="w-48 flex-shrink min-w-0 px-2 py-0.5 bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-border dark:border-wiki-border-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/50 dark:placeholder:text-wiki-muted-dark focus:outline-none focus:border-wiki-link dark:focus:border-wiki-link-dark text-[13px]"
+        />
+        {/* Local save */}
+        <button
+          onClick={handleSaveRoute}
+          title={`Save "${route.name.trim() || 'Untitled Route'}" to browser storage`}
+          className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-article dark:hover:bg-wiki-article-dark transition-colors whitespace-nowrap"
+        >
+          {saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+        </button>
+        {/* Local load */}
+        <div ref={loadMenuRef} className="relative">
+          <button
+            onClick={() => setLoadMenuOpen((v) => !v)}
+            title="Load a previously saved route"
+            className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-article dark:hover:bg-wiki-article-dark transition-colors whitespace-nowrap"
+          >
+            Load ▾
+          </button>
+          {loadMenuOpen && (
+            <div className="absolute top-full left-0 mt-0.5 z-50 min-w-[260px] max-w-xs bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-lg">
+              {savedRoutes.length === 0 ? (
+                <p className="px-3 py-2.5 text-[12px] text-wiki-muted dark:text-wiki-muted-dark italic">
+                  No saved routes yet.
+                </p>
+              ) : (
+                <ul className="max-h-64 overflow-y-auto">
+                  {savedRoutes.map((entry) => (
+                    <li
+                      key={entry.name}
+                      className="flex items-center border-b border-wiki-border dark:border-wiki-border-dark last:border-0 hover:bg-wiki-article dark:hover:bg-wiki-article-dark"
+                    >
+                      <button
+                        onClick={() => handleLoadRoute(entry)}
+                        className="flex-1 text-left px-3 py-2 min-w-0"
+                      >
+                        <span className="block text-[12px] font-medium text-wiki-text dark:text-wiki-text-dark truncate">
+                          {entry.name}
+                        </span>
+                        <span className="block text-[10px] text-wiki-muted dark:text-wiki-muted-dark">
+                          {new Date(entry.savedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteSaved(entry.name); }}
+                        title={`Delete saved route "${entry.name}"`}
+                        aria-label={`Delete saved route "${entry.name}"`}
+                        className="flex items-center justify-center p-2 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors flex-shrink-0"
+                      >
+                        <XIcon />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+        {/* Reset Route — inline confirmation */}
+        {confirmReset ? (
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[11px] text-wiki-text dark:text-wiki-text-dark whitespace-nowrap">
+              Clear route?
+            </span>
+            <button
+              onClick={handleResetConfirm}
+              className="px-2 py-0.5 text-[11px] font-semibold text-white bg-red-600 dark:bg-red-700 hover:opacity-80 transition-opacity whitespace-nowrap"
+            >
+              Reset
+            </button>
+            <button
+              onClick={() => setConfirmReset(false)}
+              className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmReset(true)}
+            title="Reset the current route back to a blank state"
+            className="px-2 py-0.5 text-[12px] font-medium border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors whitespace-nowrap flex-shrink-0"
+          >
+            Reset Route
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            const el = document.getElementById('available-tasks');
+            if (!el) return;
+            const appStickyBottom = getAppStickyBottom();
+            const elementTop = window.scrollY + el.getBoundingClientRect().top;
+            window.scrollTo({ top: Math.max(0, elementTop - appStickyBottom - 8), behavior: 'smooth' });
+          }}
+          className="ml-auto text-[12px] font-medium text-wiki-link dark:text-wiki-link-dark hover:underline whitespace-nowrap flex-shrink-0"
+        >
+          ↓ Jump to Available Tasks
+        </button>
+      </div>
+
+      {/* ── Section order bar (drag chips — shown when 2+ sections) ──────── */}
+      {route.sections.length > 1 && (
+        <div className="bg-wiki-article dark:bg-wiki-article-dark px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <DndContext
+              sensors={sectionSensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleSectionDragStart}
+              onDragEnd={handleSectionDragEnd}
+              onDragCancel={handleSectionDragCancel}
+            >
+              <SortableContext
+                items={route.sections.map((s) => s.id)}
+                strategy={horizontalListSortingStrategy}
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {route.sections.map((s) => (
+                    <SortableSectionChip
+                      key={s.id}
+                      section={s}
+                      isBeingDragged={draggingSectionId === s.id}
+                      onJump={handleSectionJump}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+              <DragOverlay dropAnimation={null}>
+                {draggingSectionId ? (
+                  <div className="flex items-center gap-1.5 rounded border border-wiki-link dark:border-wiki-link-dark bg-wiki-surface dark:bg-wiki-surface-dark text-[12px] text-wiki-text dark:text-wiki-text-dark shadow-md opacity-90 select-none px-2.5 py-1.5">
+                    <GripIcon />
+                    <span className="font-medium">
+                      {route.sections.find((s) => s.id === draggingSectionId)?.name ?? ''}
+                    </span>
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+            <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark whitespace-nowrap flex-shrink-0 italic">
+              Drag handle to reorder &middot; click section name to jump
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Validation / status banners ──────────────────────────────────── */}
+      {/* ── Empty state ──────────────────────────────────────────────────── */}
+      {itemCount === 0 && route.sections.length <= 1 && (
+        <div className="bg-wiki-article dark:bg-wiki-article-dark px-3 py-5 text-center text-wiki-muted dark:text-wiki-muted-dark italic">
+          No tasks yet —{' '}
+          <span className="not-italic font-semibold text-wiki-link dark:text-wiki-link-dark">
+            use the + button
+          </span>{' '}
+          in the task list below, or{' '}
+          <button
+            className="font-semibold text-wiki-link dark:text-wiki-link-dark underline cursor-pointer bg-transparent border-0 p-0 text-[13px]"
+            onClick={() => setAddingCustomToSection(route.sections[0]?.id ?? '')}
+          >
+            add a custom task
+          </button>
+          .
+        </div>
+      )}
+
+      {/* ── Table (shown when there are items OR multiple sections) ─────── */}
+      {(itemCount > 0 || route.sections.length > 1) && (
+        <div className="w-full relative">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px]">
+              <thead>
+                <tr>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-1 py-2 font-semibold text-center w-12 cursor-default">#</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Area</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Name</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Task</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Requirements</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-20 cursor-default">Pts</th>
+                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Act</th>
+                </tr>
+              </thead>
+              <SortableContext
+                items={allRouteItems.map((i) => i.taskId)}
+                strategy={verticalListSortingStrategy}
+              >
+                <tbody>
+                  {route.sections.map((section, sIdx) => (
+                    <TableSection
+                      key={section.id}
+                      section={section}
+                      sectionStart={sectionStarts[sIdx] ?? 0}
+                      taskMap={taskMap}
+                      onRemoveTask={onRemoveTask}
+                      onEditCustomTask={onEditCustomTask}
+                      onRenameSection={onRenameSection}
+                      onRemoveSection={onRemoveSection}
+                      addingCustomToSection={addingCustomToSection}
+                      setAddingCustomToSection={setAddingCustomToSection}
+                      onAddCustomConfirm={handleAddCustomConfirm}
+                      isDraggingSection={isDraggingSection}
+                    />
+                  ))}
+                </tbody>
+              </SortableContext>
+            </table>
+          </DndContext>
+        </div>
+      )}
+    </div>
+  );
+}

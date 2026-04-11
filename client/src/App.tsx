@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { useTaskStore } from '@/state/useTaskStore';
+import { useRouteStore } from '@/state/useRouteStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { TaskTable } from '@/components/TaskTable/TaskTable';
@@ -10,6 +11,7 @@ import { TaskSummary } from '@/components/TaskSummary/TaskSummary';
 import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
 import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
+import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import type { SortField } from '@/types/task';
 
@@ -19,13 +21,23 @@ const MemoizedMobileTaskList = memo(MobileTaskList);
 
 export default function App() {
   const {
-    loading, tasks, visibleTasks,
+    loading, tasks, allTaskViews, visibleTasks,
     visiblePointsTotal, visiblePointsExcludingCompleted, totalAcquiredPoints, totalCompletedCount,
     filters, sort, setFilters, setSort,
     toggleCompleted, toggleTodo, replaceFromPlugin, isNoOpImport, canRevert, revertImport,
   } = useTaskStore();
   const { theme, toggleTheme } = useTheme();
   const layoutMode = useLayoutMode();
+
+  // ── Route Planner state (isolated from task tracker state) ────────────────
+  const {
+    route, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
+    reorderSections, resetRoute,
+    updateRouteName, replaceRoute, addCustomTask, editCustomTask,
+    addSection, renameSection, removeSection,
+  } = useRouteStore();
+  // Current app mode. 'tracker' is the default on load — Route Planner is opt-in.
+  const [appMode, setAppMode] = useState<'tracker' | 'planner'>('tracker');
   
   // ── Interaction State ───────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(true);
@@ -102,6 +114,17 @@ export default function App() {
     (filters.searchQuery.trim() ? 1 : 0),
   [filters]);
 
+  // In planner mode, tasks already in the active route are removed from the lower
+  // source list so users see only tasks they can still add. In tracker mode, the
+  // full filtered list is used unchanged.
+  const displayTasks = useMemo(
+    () =>
+      appMode === 'planner'
+        ? visibleTasks.filter((t) => !taskIdsInRoute.has(t.id))
+        : visibleTasks,
+    [appMode, visibleTasks, taskIdsInRoute],
+  );
+
   /** 
    * CRITICAL FIX: 
    * Instead of just toggling showFilters and letting the whole App rerender,
@@ -120,6 +143,7 @@ export default function App() {
       {layoutMode !== 'mobile' && (
         <div
           ref={headerRef}
+          data-app-sticky-header=""
           className={`fixed top-0 left-0 right-0 z-50 transition-transform duration-100 ${
             isScrolled ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none invisible'
           }`}
@@ -159,19 +183,21 @@ export default function App() {
               )}
             </div>
 
-            {/* Compact summary — always visible in the sticky bar */}
-            <div className="flex-1 flex justify-center pointer-events-none px-4">
-              <TaskSummary
-                variant="compact"
-                loading={loading}
-                visibleCount={visibleTasks.length}
-                totalCount={tasks.length}
-                visiblePoints={visiblePointsTotal}
-                visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
-                totalAcquiredPoints={totalAcquiredPoints}
-                completedCount={totalCompletedCount}
-              />
-            </div>
+            {/* Compact summary — only in tracker mode */}
+            {appMode !== 'planner' && (
+              <div className="flex-1 flex justify-center pointer-events-none px-4">
+                <TaskSummary
+                  variant="compact"
+                  loading={loading}
+                  visibleCount={visibleTasks.length}
+                  totalCount={tasks.length}
+                  visiblePoints={visiblePointsTotal}
+                  visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+                  totalAcquiredPoints={totalAcquiredPoints}
+                  completedCount={totalCompletedCount}
+                />
+              </div>
+            )}
 
             <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
               <button
@@ -199,8 +225,9 @@ export default function App() {
             <div className="wiki-filter-strip">
               <div className="flex flex-col lg:flex-row lg:items-start">
                 <div className="flex-1 min-w-0 lg:pr-4">
-                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} />
+                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} mode={appMode} />
                 </div>
+                {appMode !== 'planner' && (
                 <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">
                   <ImportButton
                     tasks={tasks}
@@ -215,6 +242,7 @@ export default function App() {
                     onImport={handleImportForButton}
                   />
                 </div>
+                )}
               </div>
             </div>
           </div>
@@ -223,26 +251,73 @@ export default function App() {
 
       {/* ── Wiki article container ────────────────────────────────────── */}
       <div className="wiki-article">
-
+        {/* ── Mode Tabs ─────────────────────────────────────────────── */}
+        {/* -mx-6 cancels the wiki-article side padding so tabs reach edge-to-edge. */}
+        <div className="-mx-6 border-b border-wiki-border dark:border-wiki-border-dark flex items-end pt-2 px-3">
+          {(['tracker', 'planner'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => {
+                setAppMode(m);
+                // Reset To-do filter when entering planner — it has no meaning there.
+                if (m === 'planner') setFilters((prev) => prev.showTodoOnly ? { ...prev, showTodoOnly: false } : prev);
+              }}
+              className={[
+                'px-4 py-1.5 text-[13px] transition-colors select-none',
+                appMode === m
+                  ? 'font-semibold text-wiki-text dark:text-wiki-text-dark border-b-2 border-wiki-link dark:border-wiki-link-dark -mb-px'
+                  : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark',
+              ].join(' ')}
+            >
+              {m === 'tracker' ? 'Task Tracker' : 'Route Planner'}
+            </button>
+          ))}
+        </div>
         {/* ── Heading row ────────────────────────────────────────────────── */}
         <div className="pt-4 pb-3 flex flex-col md:flex-row md:items-start justify-between gap-4 border-b border-wiki-border dark:border-wiki-border-dark">
           <div className="flex-1">
             <div className="text-[14px] font-semibold text-wiki-muted dark:text-wiki-muted-dark mb-1">
               SJKD's Wiki-Style Leagues Task Tracker
             </div>
-            <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} League - Tasks</h1>
-            <div className="mt-1.5">
-              <TaskSummary
-                variant="full"
-                loading={loading}
-                visibleCount={visibleTasks.length}
-                totalCount={tasks.length}
-                visiblePoints={visiblePointsTotal}
-                visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
-                totalAcquiredPoints={totalAcquiredPoints}
-                completedCount={totalCompletedCount}
-              />
-            </div>
+            {appMode === 'planner' ? (
+              <>
+                <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} Route Planner</h1>
+                <p className="mt-1.5 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
+                  ←{' '}
+                  <button
+                    onClick={() => setAppMode('tracker')}
+                    className="text-wiki-link dark:text-wiki-link-dark hover:underline font-medium"
+                  >
+                    Back to Task Tracker
+                  </button>
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="wiki-page-title">{CURRENT_LEAGUE.name} League - Tasks</h1>
+                <div className="mt-1.5">
+                  <TaskSummary
+                    variant="full"
+                    loading={loading}
+                    visibleCount={visibleTasks.length}
+                    totalCount={tasks.length}
+                    visiblePoints={visiblePointsTotal}
+                    visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+                    totalAcquiredPoints={totalAcquiredPoints}
+                    completedCount={totalCompletedCount}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
+                  Planning your run?{' '}
+                  <button
+                    onClick={() => setAppMode('planner')}
+                    className="text-wiki-link dark:text-wiki-link-dark hover:underline font-medium"
+                  >
+                    Try the Route Planner →
+                  </button>
+                </p>
+              </>
+            )}
           </div>
           <div className="flex flex-row items-center justify-between md:flex-col md:items-end gap-3 flex-shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-0 border-wiki-border dark:border-wiki-border-dark mt-2 md:mt-0">
             <div className="text-[12px] leading-tight text-wiki-muted dark:text-wiki-muted-dark text-left md:text-right">
@@ -281,6 +356,7 @@ export default function App() {
                 sort={sort}
                 onFiltersChange={setFilters}
                 onSortChange={handleSortChange}
+                mode={appMode}
                 activeCount={activeFilterCount}
                 onImport={handleImportForButton}
                 canRevert={canRevert}
@@ -300,8 +376,9 @@ export default function App() {
             <div className="wiki-filter-strip">
               <div className="flex flex-col lg:flex-row lg:items-start">
                 <div className="flex-1 min-w-0 lg:pr-4">
-                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} />
+                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} mode={appMode} />
                 </div>
+                {appMode !== 'planner' && (
                 <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">
                   <ImportButton
                     tasks={tasks}
@@ -316,39 +393,110 @@ export default function App() {
                     onImport={handleImportForButton}
                   />
                 </div>
+              )}
               </div>
             </div>
           </div>
         )}
 
         {/* ── Task table ─────────────────────────────────────────────────── */}
-        <main className="mt-3 pb-6">
-          {loading ? (
-            <div className="text-center py-16 text-wiki-muted dark:text-wiki-muted-dark text-[13px] italic">
-              Loading task list…
-            </div>
-          ) : layoutMode === 'mobile' ? (
-            // Mobile (card view) layout branch
-            <MemoizedMobileTaskList
-              tasks={visibleTasks}
-              sort={sort}
-              onSortChange={handleSortChange}
-              onToggleCompleted={toggleCompleted}
-              onToggleTodo={toggleTodo}
-            />
-          ) : (
-            // Desktop and Tablet layout branch via the wiki table
-            <MemoizedTaskTable
-              tasks={visibleTasks}
-              sort={sort}
-              onSortChange={handleSortChange}
-              onToggleCompleted={toggleCompleted}
-              onToggleTodo={toggleTodo}
-            />
-          )}
-        </main>
+        {/* In tracker mode the task table stays inside this wiki-article. */}
+        {appMode !== 'planner' && (
+          <main className="mt-3 pb-6">
+            {/* Route Planner panel — shown above list only in planner mode after load */}
+            {loading ? (
+              <div className="text-center py-16 text-wiki-muted dark:text-wiki-muted-dark text-[13px] italic">
+                Loading task list…
+              </div>
+            ) : layoutMode === 'mobile' ? (
+              <MemoizedMobileTaskList
+                tasks={displayTasks}
+                sort={sort}
+                onSortChange={handleSortChange}
+                onToggleCompleted={toggleCompleted}
+                onToggleTodo={toggleTodo}
+                mode={appMode}
+                onAddToRoute={addTaskToRoute}
+              />
+            ) : (
+              <MemoizedTaskTable
+                tasks={displayTasks}
+                sort={sort}
+                onSortChange={handleSortChange}
+                onToggleCompleted={toggleCompleted}
+                onToggleTodo={toggleTodo}
+                mode={appMode}
+                onAddToRoute={addTaskToRoute}
+              />
+            )}
+          </main>
+        )}
 
+        {/* In planner mode, the route planner sits inside this wiki-article. */}
+        {appMode === 'planner' && !loading && (
+          <div id="route-planner" className="mt-3 pb-3">
+            <RoutePlannerPanel
+              route={route}
+              allTasks={allTaskViews}
+              onUpdateRouteName={updateRouteName}
+              onRemoveTask={removeTaskFromRoute}
+              onReorderItems={reorderItems}
+              onReorderSections={reorderSections}
+              onResetRoute={resetRoute}
+              onReplaceRoute={replaceRoute}
+              onAddCustomTask={addCustomTask}
+              onEditCustomTask={editCustomTask}
+              onAddSection={addSection}
+              onRenameSection={renameSection}
+              onRemoveSection={removeSection}
+            />
+          </div>
+        )}
       </div>
+
+      {/* ── Available Tasks — separate wiki-article so the page bg shows between ── */}
+      {/* Root cause of the old gap not working: planner and tasks shared one        */}
+      {/* wiki-article surface. Closing that article and starting a new one below    */}
+      {/* lets the bg-wiki-bg of the outer container show through as a real gap.     */}
+      {appMode === 'planner' && (
+        <div className="wiki-article mt-4" id="available-tasks">
+          <div className="py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-3">
+            <span className="font-bold text-[18px] text-wiki-text dark:text-wiki-text-dark">
+              Available Tasks
+            </span>
+            <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark">
+              click <span className="font-semibold">+</span> on any row to add it to your route
+            </span>
+          </div>
+          <main className="pb-6">
+            {loading ? (
+              <div className="text-center py-16 text-wiki-muted dark:text-wiki-muted-dark text-[13px] italic">
+                Loading task list…
+              </div>
+            ) : layoutMode === 'mobile' ? (
+              <MemoizedMobileTaskList
+                tasks={displayTasks}
+                sort={sort}
+                onSortChange={handleSortChange}
+                onToggleCompleted={toggleCompleted}
+                onToggleTodo={toggleTodo}
+                mode={appMode}
+                onAddToRoute={addTaskToRoute}
+              />
+            ) : (
+              <MemoizedTaskTable
+                tasks={displayTasks}
+                sort={sort}
+                onSortChange={handleSortChange}
+                onToggleCompleted={toggleCompleted}
+                onToggleTodo={toggleTodo}
+                mode={appMode}
+                onAddToRoute={addTaskToRoute}
+              />
+            )}
+          </main>
+        </div>
+      )}
     </div>
   );
 }

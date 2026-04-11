@@ -336,6 +336,8 @@ export function useTaskStore() {
     loading,
     /** All tasks (content only, no user state) — use for deriving filter options */
     tasks,
+    /** All tasks with user state merged, unfiltered — use for route planner and similar needs */
+    allTaskViews: taskViews,
     /** Tasks merged with user state, filtered and sorted for display */
     visibleTasks,
     /** Total league points for currently visible tasks */

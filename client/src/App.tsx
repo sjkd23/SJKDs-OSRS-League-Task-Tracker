@@ -31,7 +31,7 @@ export default function App() {
 
   // ── Route Planner state (isolated from task tracker state) ────────────────
   const {
-    route, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
+    route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
     reorderSections, resetRoute,
     updateRouteName, replaceRoute, addCustomTask, editCustomTask,
     addSection, renameSection, removeSection,
@@ -436,8 +436,8 @@ export default function App() {
         {appMode === 'planner' && !loading && (
           <div id="route-planner" className="mt-3 pb-3">
             <RoutePlannerPanel
-              route={route}
-              allTasks={allTaskViews}
+              route={route}                isRunMode={isRunMode}
+                setIsRunMode={setIsRunMode}              allTasks={allTaskViews}
               onUpdateRouteName={updateRouteName}
               onRemoveTask={removeTaskFromRoute}
               onReorderItems={reorderItems}

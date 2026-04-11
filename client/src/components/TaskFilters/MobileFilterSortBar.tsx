@@ -190,14 +190,19 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
       <div className="flex gap-2 flex-1">
         <button
           onClick={() => setFilterOpen(true)}
-          className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark rounded font-semibold text-[13px] text-wiki-text dark:text-wiki-text-dark active:scale-95 transition-transform"
+          className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark rounded font-semibold text-[13px] text-wiki-text dark:text-wiki-text-dark active:scale-95 transition-transform relative"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
           </svg>
-          Filter
+          <span className="flex-shrink-0">Filter</span>
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 pointer-events-none">
+            <span className="bg-wiki-link dark:bg-wiki-link-dark px-1.5 py-0.5 rounded-full text-[10px] leading-none">
+              99
+            </span>
+          </div>
           {activeCount > 0 && (
-            <span className="bg-wiki-link dark:bg-wiki-link-dark text-white px-1.5 py-0.5 rounded-full text-[10px] leading-none">
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 bg-wiki-link dark:bg-wiki-link-dark text-white px-1.5 py-0.5 rounded-full text-[10px] leading-none">
               {activeCount}
             </span>
           )}

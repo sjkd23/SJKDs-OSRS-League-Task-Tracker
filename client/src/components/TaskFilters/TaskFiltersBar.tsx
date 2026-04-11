@@ -47,11 +47,11 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
   return (
     <div>
       {/* Strip header row */}
-      <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2 relative min-h-[32px]">
         <span className="font-semibold text-[13px] text-wiki-muted dark:text-wiki-muted-dark uppercase tracking-wide">
           Filter
         </span>
-        <div className="flex items-center gap-3">
+        <div className="absolute right-0 flex items-center gap-3">
           {hasActiveFilters && (
             <span className="text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark">
               {activeCount} filter{activeCount !== 1 ? 's' : ''} active
@@ -63,7 +63,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
                 e.stopPropagation();
                 reset();
               }}
-              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold py-2 px-1 -mr-1"
+              className="text-wiki-link dark:text-wiki-link-dark hover:text-wiki-link-hover dark:hover:text-wiki-link-hover-dark hover:underline text-[13px] font-semibold py-1 px-1 -mr-1"
             >
               Reset
             </button>

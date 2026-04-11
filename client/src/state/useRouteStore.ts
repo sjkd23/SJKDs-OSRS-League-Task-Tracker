@@ -93,6 +93,7 @@ function loadRoute(): Route {
  */
 export function useRouteStore() {
   const [route, setRoute] = useState<Route>(() => loadRoute());
+  const [isRunMode, setIsRunMode] = useState(false);
 
   // Stable Set of ALL task IDs across all sections — memoized so the reference
   // only changes when items actually change, preserving TaskTable memoization.
@@ -103,7 +104,7 @@ export function useRouteStore() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  /** Add a task to the end of the first section. Deduplicates silently. */
+  /** Add a task to the end of the last section. Deduplicates silently. */
   const addTaskToRoute = useCallback((taskId: string) => {
     setRoute((prev) => {
       const alreadyIn = prev.sections.some((s) => s.items.some((i) => i.taskId === taskId));
@@ -112,8 +113,9 @@ export function useRouteStore() {
       if (sections.length === 0) {
         sections.push({ id: crypto.randomUUID(), name: 'Main', description: '', items: [] });
       }
-      const first: RouteSection = { ...sections[0], items: [...sections[0].items, { taskId }] };
-      const next: Route = { ...prev, sections: [first, ...sections.slice(1)] };
+      const lastIdx = sections.length - 1;
+      const lastSection: RouteSection = { ...sections[lastIdx], items: [...sections[lastIdx].items, { taskId }] };
+      const next: Route = { ...prev, sections: [...sections.slice(0, lastIdx), lastSection] };
       saveToStorage(ROUTE_STORAGE_KEY, next);
       return next;
     });
@@ -207,12 +209,14 @@ export function useRouteStore() {
     });
   }, []);
 
-  /** Edit an existing custom task's label or description independently. */
+  /** Edit an existing custom task's label, description or note independently. */
   const editCustomTask = useCallback(
-    (taskId: string, field: 'label' | 'description', value: string) => {
+    (taskId: string, field: 'label' | 'description' | 'note', value: string) => {
       setRoute((prev) => {
         const trimmed = value.trim();
-        if (!trimmed) return prev;
+        // Disallow empty labels, allowing them for others
+        if (field === 'label' && !trimmed) return prev;
+        
         const sections = prev.sections.map((s) => ({
           ...s,
           items: s.items.map((i) =>
@@ -221,7 +225,9 @@ export function useRouteStore() {
                   ...i,
                   ...(field === 'label'
                     ? { customName: trimmed }
-                    : { customDescription: trimmed }),
+                    : field === 'description'
+                    ? { customDescription: trimmed }
+                    : { note: trimmed }),
                 }
               : i,
           ),
@@ -315,6 +321,8 @@ export function useRouteStore() {
 
   return {
     route,
+    isRunMode,
+    setIsRunMode,
     taskIdsInRoute,
     addTaskToRoute,
     removeTaskFromRoute,

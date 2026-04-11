@@ -224,20 +224,24 @@ export function ImportButton({
           </button>
 
           {showHelp && (
-            <div className="absolute left-0 top-6 z-50 w-72 bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark">
+            <div className="absolute left-0 top-6 z-50 w-80 bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark">
               <p className="font-semibold mb-2 text-wiki-text dark:text-wiki-text-dark">
                 How to import
               </p>
-              <ol className="list-decimal list-inside space-y-1.5 mb-3 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
+              <ol className="list-decimal list-inside pl-1 space-y-1.5 mb-3 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
                 <li>
-                  Install the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Task Tracker</span> plugin
-                  by Reldo from the RuneLite Plugin Hub.
+                  Install the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Task Tracker</span> RuneLite plugin by <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Reldo.net</span>
+                </li>
+                <li>Open the Task Tracker plugin on the right side</li>
+                <li>
+                  Make sure the correct league is selected, and <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">no route is selected</span> in the sorting dropdown
                 </li>
                 <li>
-                  Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export</span> at the bottom
-                  of the plugin panel in RuneLite.
+                  At the bottom of the plugin panel, click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export</span>. Your task list will be copied to your clipboard
                 </li>
-                <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import from Clipboard</span> below.</li>
+                <li>
+                  Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import from Clipboard</span> below
+                </li>
               </ol>
               <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
                 <p className="font-semibold mb-1 text-wiki-text dark:text-wiki-text-dark">

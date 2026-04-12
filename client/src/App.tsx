@@ -125,6 +125,19 @@ export default function App() {
     [appMode, visibleTasks, taskIdsInRoute],
   );
 
+  // Route planner summary stats — used by the mobile sticky bar in planner mode
+  const routeItemCount = useMemo(
+    () => route.sections.reduce((sum, s) => sum + s.items.length, 0),
+    [route.sections],
+  );
+  const routeTotalPoints = useMemo(() => {
+    const taskMap = new Map(allTaskViews.map((t) => [t.id, t]));
+    return route.sections.flatMap((s) => s.items).reduce((sum, item) => {
+      if (item.isCustom) return sum;
+      return sum + (taskMap.get(item.taskId)?.points ?? 0);
+    }, 0);
+  }, [route.sections, allTaskViews]);
+
   /** 
    * CRITICAL FIX: 
    * Instead of just toggling showFilters and letting the whole App rerender,
@@ -368,6 +381,8 @@ export default function App() {
                 visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
                 totalAcquiredPoints={totalAcquiredPoints}
                 completedCount={totalCompletedCount}
+                routeItemCount={routeItemCount}
+                routeTotalPoints={routeTotalPoints}
               />
             </div>
           </>

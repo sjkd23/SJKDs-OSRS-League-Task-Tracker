@@ -157,7 +157,7 @@ export function ImportButton({
     return true;
   }
 
-  /** Primary action: read from clipboard and import. Shows an error message on failure. */
+  /** Primary action for desktop: read from clipboard and import. */
   async function handleClipboardImport() {
     onStatusChange({ type: 'idle' });
     let clipText = '';
@@ -184,6 +184,22 @@ export function ImportButton({
 
     doImport(clipText);
   }
+
+  /** Fallback action for mobile: import from pasted textarea. */
+  function handleTextareaImport() {
+    onStatusChange({ type: 'idle' });
+    if (!mobilePasteToken.trim()) {
+      onStatusChange({
+        type: 'error',
+        message: 'Paste your export data into the box first.',
+      });
+      return;
+    }
+    doImport(mobilePasteToken);
+    setMobilePasteToken('');
+  }
+
+  const [mobilePasteToken, setMobilePasteToken] = useState('');
 
   return (
     <div className="flex flex-col gap-2">
@@ -275,6 +291,7 @@ export function ImportButton({
         <button
           onClick={() => void handleClipboardImport()}
           className={[
+            'hidden sm:block',
             'px-3 py-1.5',
             'border border-wiki-link dark:border-wiki-link-dark',
             'bg-wiki-link dark:bg-wiki-link-dark',
@@ -284,6 +301,29 @@ export function ImportButton({
           ].join(' ')}
         >
           Import from Clipboard
+        </button>
+      </div>
+
+      {/* Mobile-only paste flow */}
+      <div className="sm:hidden flex flex-col gap-2 mt-1">
+        <textarea
+          value={mobilePasteToken}
+          onChange={(e) => setMobilePasteToken(e.target.value)}
+          placeholder="Paste export JSON here..."
+          className="w-full text-[13px] px-2 py-1.5 bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-border dark:border-wiki-border-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-text/50 dark:placeholder:text-wiki-muted-dark focus:outline-none focus:border-wiki-link dark:focus:border-wiki-link-dark min-h-[50px] resize-y"
+        />
+        <button
+          onClick={() => void handleTextareaImport()}
+          className={[
+            'w-full py-1.5',
+            'border border-wiki-link dark:border-wiki-link-dark',
+            'bg-wiki-link dark:bg-wiki-link-dark',
+            'text-[13px] text-white dark:text-wiki-bg-dark font-semibold',
+            'hover:opacity-90 active:opacity-80',
+            'select-none leading-snug transition-opacity',
+          ].join(' ')}
+        >
+          Import
         </button>
       </div>
 

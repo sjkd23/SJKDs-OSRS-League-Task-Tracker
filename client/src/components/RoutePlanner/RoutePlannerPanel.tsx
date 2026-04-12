@@ -1,4 +1,5 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
 import {
   DndContext,
   DragOverlay,
@@ -1151,6 +1152,508 @@ function SortableSectionChip({ section, isBeingDragged, isRunMode, onJump }: Sor
   );
 }
 
+// ─── Mobile route card (real task) ────────────────────────────────────────────
+
+function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: SortableRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.taskId });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 2 : undefined,
+  };
+
+  const reqIsNa = isNaReqs(task.requirementsText);
+  const regionIcon = regionIconUrl(task.area);
+  const regionColor = REGION_COLOUR[task.area];
+  const areaUrl = regionWikiUrl(task.area);
+  const cardBg = task.completed
+    ? 'bg-[#c8e8c8] dark:bg-[#182b18] border-[#b8ddb8] dark:border-[#1e3620]'
+    : 'bg-wiki-surface dark:bg-wiki-surface-dark border-wiki-border dark:border-wiki-border-dark';
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={`flex flex-col border rounded-sm shadow-sm overflow-hidden transition-colors ${cardBg}`}
+    >
+      {/* Header: drag handle, position #, area icon, task name, points */}
+      <div className="flex items-start gap-2 p-2.5 border-b border-wiki-border dark:border-wiki-border-dark/50">
+        {!isRunMode && (
+          <span
+            {...listeners}
+            aria-label="Drag to reorder"
+            className="flex-shrink-0 flex items-center self-stretch px-1 text-wiki-muted dark:text-wiki-muted-dark cursor-grab active:cursor-grabbing touch-none select-none hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-sm"
+          >
+            <GripIcon />
+          </span>
+        )}
+        <span className="flex-shrink-0 text-[11px] font-bold tabular-nums text-wiki-muted dark:text-wiki-muted-dark self-center min-w-[1.25rem] text-right">
+          {listPos + 1}.
+        </span>
+        <div className="flex-shrink-0 mt-0.5">
+          {(() => {
+            const icon = (
+              <WikiIcon
+                src={regionIcon ?? ''}
+                alt={task.area}
+                className={regionIconClass(task.area, 'table')}
+                fallbackColor={regionColor}
+              />
+            );
+            return areaUrl ? (
+              <a href={areaUrl} target="_blank" rel="noopener noreferrer" title={task.area} className="inline-flex items-center no-underline hover:opacity-80">
+                {icon}
+              </a>
+            ) : icon;
+          })()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-[14px] leading-tight break-words text-wiki-text dark:text-wiki-text-dark">
+            {task.nameParts && task.nameParts.length > 0 ? (
+              <RichText parts={task.nameParts} />
+            ) : task.wikiUrl ? (
+              <a href={task.wikiUrl} target="_blank" rel="noopener noreferrer" className="text-wiki-link dark:text-wiki-link-dark hover:underline">
+                {task.name}
+              </a>
+            ) : (
+              task.name
+            )}
+          </div>
+          <div className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark mt-0.5">{task.area}</div>
+        </div>
+        <div className="flex-shrink-0 flex items-center gap-1 ml-1 self-center">
+          {difficultyIconUrl(task.tier) && (
+            <WikiIcon src={difficultyIconUrl(task.tier)!} alt={task.tier} className="w-4 h-4 flex-shrink-0" />
+          )}
+          <span className={`text-[13px] font-semibold tabular-nums ${TIER_COLOURS[task.tier] ?? ''}`}>
+            {task.points}
+          </span>
+        </div>
+      </div>
+
+      {/* Description */}
+      <div className="px-2.5 py-2 text-[13px] leading-snug break-words text-wiki-text dark:text-wiki-text-dark opacity-90">
+        {task.descriptionParts && task.descriptionParts.length > 0 ? (
+          <RichText parts={task.descriptionParts} />
+        ) : (
+          task.description
+        )}
+      </div>
+
+      {/* Requirements (hidden when N/A) */}
+      {!reqIsNa && (
+        <div className="px-2.5 py-1.5 border-t border-wiki-border dark:border-wiki-border-dark/50 text-[12px] bg-black/5 dark:bg-black/20 break-words">
+          <span className="font-bold text-[10px] uppercase tracking-wider text-wiki-muted dark:text-wiki-muted-dark mr-1">Reqs:</span>
+          <RequirementsCell
+            requirementsText={task.requirementsText}
+            requirementsParts={task.requirementsParts}
+          />
+        </div>
+      )}
+
+      {/* Remove action (edit mode only) */}
+      {!isRunMode && (
+        <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
+          <button
+            onClick={() => onRemove(item.taskId)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-full py-2.5 text-[12px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors touch-manipulation"
+          >
+            Remove from route
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile custom task card ───────────────────────────────────────────────────
+
+function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit }: SortableCustomRowProps) {
+  const [editingField, setEditingField] = useState<'label' | 'description' | 'note' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.taskId });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 2 : undefined,
+  };
+
+  useEffect(() => {
+    if (editingField) {
+      setEditValue(
+        editingField === 'label'
+          ? (item.customName ?? '')
+          : editingField === 'description'
+          ? (item.customDescription ?? '')
+          : (item.note ?? ''),
+      );
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      });
+    }
+  }, [editingField, item.customName, item.customDescription, item.note]);
+
+  const commitEdit = () => {
+    if (!editingField) return;
+    const trimmed = editValue.trim();
+    if (editingField === 'label' && !trimmed) { setEditingField(null); return; }
+    onEdit(item.taskId, editingField, trimmed);
+    setEditingField(null);
+  };
+
+  const cancelEdit = () => setEditingField(null);
+  const displayName = item.customName ?? '(custom task)';
+  const displayDesc = item.customDescription ?? '';
+
+  const sharedInputCls = 'flex-1 min-w-0 px-1.5 py-1 text-[13px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-muted dark:placeholder:text-wiki-muted-dark focus:outline-none';
+  const saveCls = 'px-2 py-1 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity flex-shrink-0';
+  const cancelCls = 'px-2 py-1 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors flex-shrink-0';
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className="flex flex-col border rounded-sm shadow-sm overflow-hidden bg-wiki-surface dark:bg-wiki-surface-dark border-wiki-border dark:border-wiki-border-dark"
+    >
+      {/* Header: drag handle, #, custom icon, label */}
+      <div className="flex items-start gap-2 p-2.5 border-b border-wiki-border dark:border-wiki-border-dark/50">
+        {!isRunMode && (
+          <span
+            {...(editingField ? {} : listeners)}
+            aria-label="Drag to reorder"
+            className="flex-shrink-0 flex items-center self-stretch px-1 text-wiki-muted dark:text-wiki-muted-dark cursor-grab active:cursor-grabbing touch-none select-none hover:bg-black/5 dark:hover:bg-white/5 transition-colors rounded-sm"
+          >
+            <GripIcon />
+          </span>
+        )}
+        <span className="flex-shrink-0 text-[11px] font-bold tabular-nums text-wiki-muted dark:text-wiki-muted-dark self-center min-w-[1.25rem] text-right">
+          {listPos + 1}.
+        </span>
+        <div className="flex-shrink-0 mt-0.5">
+          <WikiIcon src="/icons/areas/Custom.png" alt="Custom" className="w-[22px] h-[22px] flex-shrink-0" />
+        </div>
+        <div className="flex-1 min-w-0">
+          {editingField === 'label' ? (
+            <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+              <input ref={inputRef} type="text" value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+                maxLength={120} className={sharedInputCls} />
+              <button onClick={commitEdit} className={saveCls}>Save</button>
+              <button onClick={cancelEdit} className={cancelCls}>✕</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-[14px] leading-tight text-wiki-text dark:text-wiki-text-dark break-words">{displayName}</span>
+              {!isRunMode && (
+                <button onClick={() => setEditingField('label')} onPointerDown={(e) => e.stopPropagation()} title="Edit label"
+                  className="flex-shrink-0 flex items-center justify-center p-0.5 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors">
+                  <PencilIcon />
+                </button>
+              )}
+            </div>
+          )}
+          <div className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark mt-0.5">Custom task</div>
+        </div>
+      </div>
+
+      {/* Description */}
+      <div className="px-2.5 py-2 border-b border-wiki-border dark:border-wiki-border-dark/50 text-[13px]">
+        {editingField === 'description' ? (
+          <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+            <input ref={inputRef} type="text" value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+              placeholder="Task description…" maxLength={200} className={sharedInputCls} />
+            <button onClick={commitEdit} className={saveCls}>Save</button>
+            <button onClick={cancelEdit} className={cancelCls}>✕</button>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5">
+            <span className="flex-1 leading-snug break-words text-wiki-text dark:text-wiki-text-dark">
+              {displayDesc || <span className="text-wiki-muted dark:text-wiki-muted-dark italic">No description</span>}
+            </span>
+            {!isRunMode && (
+              <button onClick={() => setEditingField('description')} onPointerDown={(e) => e.stopPropagation()} title="Edit description"
+                className="flex-shrink-0 flex items-center justify-center p-0.5 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors mt-0.5">
+                <PencilIcon />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Notes / Requirements */}
+      <div className="px-2.5 py-2 text-[12px] bg-black/5 dark:bg-black/20">
+        {editingField === 'note' ? (
+          <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+            <input ref={inputRef} type="text" value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+              placeholder="Notes / requirements…" maxLength={200} className={sharedInputCls} />
+            <button onClick={commitEdit} className={saveCls}>Save</button>
+            <button onClick={cancelEdit} className={cancelCls}>✕</button>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5">
+            <span className="flex-1 break-words">
+              <span className="font-bold text-[10px] uppercase tracking-wider text-wiki-muted dark:text-wiki-muted-dark">Notes: </span>
+              {item.note
+                ? <span className="text-wiki-text dark:text-wiki-text-dark">{item.note}</span>
+                : <span className="text-wiki-muted dark:text-wiki-muted-dark italic">None</span>}
+            </span>
+            {!isRunMode && (
+              <button onClick={() => setEditingField('note')} onPointerDown={(e) => e.stopPropagation()} title="Edit notes"
+                className="flex-shrink-0 flex items-center justify-center p-0.5 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors mt-0.5">
+                <PencilIcon />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Remove action */}
+      {!isRunMode && (
+        <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
+          <button
+            onClick={() => onRemove(item.taskId)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-full py-2.5 text-[12px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors touch-manipulation"
+          >
+            Remove from route
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Mobile add-custom-task form ───────────────────────────────────────────────
+
+function MobileAddCustomForm({ onAdd, onCancel }: { onAdd: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+  const commit = () => { const t = name.trim(); if (t) onAdd(t); };
+  return (
+    <div className="flex items-center gap-2 px-2 py-2.5 bg-wiki-surface dark:bg-wiki-surface-dark border border-dashed border-wiki-link dark:border-wiki-link-dark rounded-sm">
+      <WikiIcon src="/icons/areas/Custom.png" alt="Custom" className="w-[18px] h-[18px] flex-shrink-0" />
+      <input
+        ref={inputRef}
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') onCancel(); }}
+        placeholder="Custom task name…"
+        maxLength={120}
+        className="flex-1 min-w-0 px-2 py-1.5 text-[13px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-muted dark:placeholder:text-wiki-muted-dark focus:outline-none"
+      />
+      <button onClick={commit} disabled={!name.trim()}
+        className="px-2.5 py-1.5 text-[12px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0">
+        Add
+      </button>
+      <button onClick={onCancel}
+        className="px-2.5 py-1.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors flex-shrink-0">
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+// ─── Mobile route section (section header + cards) ────────────────────────────
+
+interface MobileRouteSectionProps {
+  section: RouteSection;
+  itemIndexMap: Map<string, number>;
+  taskMap: Map<string, TaskView>;
+  isRunMode: boolean;
+  onRemoveTask: (taskId: string) => void;
+  onEditCustomTask: (taskId: string, field: 'label' | 'description' | 'note', value: string) => void;
+  onRenameSection: (sectionId: string, name: string) => void;
+  onRemoveSection: (sectionId: string) => void;
+  addingCustomToSection: string | null;
+  setAddingCustomToSection: (id: string | null) => void;
+  onAddCustomConfirm: (sectionId: string, name: string) => void;
+  isDraggingSection: boolean;
+}
+
+function MobileRouteSection({
+  section,
+  itemIndexMap,
+  taskMap,
+  isRunMode,
+  onRemoveTask,
+  onEditCustomTask,
+  onRenameSection,
+  onRemoveSection,
+  addingCustomToSection,
+  setAddingCustomToSection,
+  onAddCustomConfirm,
+  isDraggingSection,
+}: MobileRouteSectionProps) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(section.name);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const sectionPoints = useMemo(
+    () => section.items.reduce((sum, item) => {
+      if (item.isCustom) return sum;
+      const task = taskMap.get(item.taskId);
+      return sum + (task?.points ?? 0);
+    }, 0),
+    [section.items, taskMap],
+  );
+
+  useEffect(() => {
+    if (editing) {
+      setEditName(section.name);
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing, section.name]);
+
+  const commitRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== section.name) onRenameSection(section.id, trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <div id={`route-section-${section.id}`} className="mb-3">
+      {/* Section header */}
+      <div className="px-2.5 py-1.5 bg-wiki-mid dark:bg-wiki-mid-dark border border-wiki-border dark:border-wiki-border-dark rounded-sm mb-2">
+        {editing ? (
+          <div className="flex items-center gap-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              maxLength={80}
+              className="flex-1 px-1.5 py-0.5 text-[12px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
+            />
+            <button onClick={commitRename}
+              className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity flex-shrink-0">
+              Save
+            </button>
+            <button onClick={() => setEditing(false)}
+              className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors flex-shrink-0">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark truncate">
+                {section.name}
+              </span>
+              {!confirmRemove && (
+                <span className="flex-shrink-0 text-[11px] text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
+                  {section.items.length} task{section.items.length !== 1 ? 's' : ''} · {sectionPoints} pts
+                </span>
+              )}
+              {!isRunMode && (
+                <button onClick={() => setEditing(true)} title={`Rename "${section.name}"`}
+                  className="flex-shrink-0 flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors">
+                  <PencilIcon />
+                </button>
+              )}
+            </div>
+            {!isRunMode && (
+              confirmRemove ? (
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-[11px] text-wiki-text dark:text-wiki-text-dark whitespace-nowrap">Remove?</span>
+                  <button onClick={() => { onRemoveSection(section.id); setConfirmRemove(false); }}
+                    className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-red-600 dark:bg-red-700 hover:opacity-80 transition-opacity">
+                    Yes
+                  </button>
+                  <button onClick={() => setConfirmRemove(false)}
+                    className="px-1.5 py-0.5 text-[11px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors">
+                    No
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { if (section.items.length === 0) onRemoveSection(section.id); else setConfirmRemove(true); }}
+                  title={`Remove section "${section.name}"`}
+                  className="flex-shrink-0 flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                >
+                  <XIcon />
+                </button>
+              )
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Task cards */}
+      {!isDraggingSection && section.items.map((item) => {
+        if (!itemIndexMap.has(item.taskId)) return null;
+        const listPos = itemIndexMap.get(item.taskId)!;
+        return (
+          <div key={item.taskId} className="mb-2">
+            {item.isCustom ? (
+              <SortableCustomCard
+                item={item}
+                listPos={listPos}
+                isRunMode={isRunMode}
+                onRemove={onRemoveTask}
+                onEdit={onEditCustomTask}
+              />
+            ) : (() => {
+              const task = taskMap.get(item.taskId);
+              if (!task) return null;
+              return (
+                <SortableRouteCard
+                  item={item}
+                  task={task}
+                  listPos={listPos}
+                  isRunMode={isRunMode}
+                  onRemove={onRemoveTask}
+                />
+              );
+            })()}
+          </div>
+        );
+      })}
+
+      {/* Add custom task */}
+      {!isRunMode && !isDraggingSection && (
+        addingCustomToSection === section.id ? (
+          <MobileAddCustomForm
+            onAdd={(name) => onAddCustomConfirm(section.id, name)}
+            onCancel={() => setAddingCustomToSection(null)}
+          />
+        ) : (
+          <button
+            onClick={() => setAddingCustomToSection(section.id)}
+            className="w-full py-2 text-[12px] text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark border border-dashed border-wiki-border dark:border-wiki-border-dark hover:border-wiki-link dark:hover:border-wiki-link-dark bg-wiki-article dark:bg-wiki-article-dark transition-colors rounded-sm"
+          >
+            + Custom task
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
 // ─── Main panel ────────────────────────────────────────────────────────────────
 
 export function RoutePlannerPanel({
@@ -1171,6 +1674,8 @@ export function RoutePlannerPanel({
   onRenameSection,
   onRemoveSection,
 }: RoutePlannerPanelProps) {
+  const layoutMode = useLayoutMode();
+
   const allRouteItems = useMemo(
     () => route.sections.flatMap((s) => s.items),
     [route.sections],
@@ -1251,6 +1756,7 @@ export function RoutePlannerPanel({
     setExportError(null);
     const payload = buildExportPayload(route, allTasks);
     const json = JSON.stringify(payload, null, 2);
+
     try {
       await navigator.clipboard.writeText(json);
       setExportStatus('copied');
@@ -1266,6 +1772,8 @@ export function RoutePlannerPanel({
   const [importInfo, setImportInfo] = useState<string | null>(null);
   const [showImportHelp, setShowImportHelp] = useState(false);
   const importHelpRef = useRef<HTMLDivElement>(null);
+  const [mobileImportOpen, setMobileImportOpen] = useState(false);
+  const [mobileImportText, setMobileImportText] = useState('');
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -1308,6 +1816,33 @@ export function RoutePlannerPanel({
     setImportStatus('success');
     setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
   }, [allTasks, onReplaceRoute]);
+
+  const handleMobileImportSubmit = useCallback(() => {
+    setImportError(null);
+    setImportInfo(null);
+    const clipboardText = mobileImportText.trim();
+    if (!clipboardText) {
+      setImportError('Paste a route export JSON first.');
+      return;
+    }
+    const result = parsePluginRoute(clipboardText, allTasks);
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    onReplaceRoute(result.route);
+    const infoParts: string[] = [];
+    const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
+    infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
+    if (result.unmapped > 0) {
+      infoParts.push(`skipped ${result.unmapped} unrecognized item${result.unmapped !== 1 ? 's' : ''}`);
+    }
+    setImportInfo(infoParts.join(', ') + '.');
+    setMobileImportOpen(false);
+    setMobileImportText('');
+    setImportStatus('success');
+    setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
+  }, [allTasks, onReplaceRoute, mobileImportText]);
 
   // ── Local save/load state ──────────────────────────────────────────────────
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
@@ -1490,14 +2025,14 @@ export function RoutePlannerPanel({
           </div>
         </div>
         {/* Right: route management controls */}
-        <div className="flex items-center justify-end gap-3 flex-wrap flex-1 ml-auto">
+        <div className="flex items-center justify-end gap-2 flex-wrap flex-1 ml-auto">
           {itemCount > 0 && (
-            <span className="text-wiki-text/85 dark:text-wiki-text-dark/85 font-semibold text-[13px] tabular-nums mr-1">
-              Route: {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {totalPoints} pts
+            <span className="text-wiki-text/85 dark:text-wiki-text-dark/85 font-semibold text-[13px] tabular-nums">
+              {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {totalPoints} pts
             </span>
           )}
 
-          <div className="relative flex items-center gap-1.5" ref={importHelpRef}>
+          <div className="relative flex items-center gap-1.5 flex-shrink-0" ref={importHelpRef}>
             <button
               onClick={() => setShowImportHelp((v) => !v)}
               aria-label="Help with route import"
@@ -1507,7 +2042,7 @@ export function RoutePlannerPanel({
               ?
             </button>
             {showImportHelp && (
-              <div className="absolute right-0 top-6 z-50 w-[380px] sm:w-[420px] bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark text-left">
+              <div className="absolute right-0 top-6 z-50 w-[260px] sm:w-[420px] bg-wiki-article dark:bg-wiki-article-dark border border-wiki-border dark:border-wiki-border-dark shadow-md p-3 text-[12.5px] text-wiki-text dark:text-wiki-text-dark text-left">
                 <p className="font-semibold mb-2 text-[13px] text-wiki-text dark:text-wiki-text-dark">
                   How to import and export routes
                 </p>
@@ -1523,7 +2058,7 @@ export function RoutePlannerPanel({
                       <li>Select your desired route from the next dropdown menu</li>
                       <li>Click the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">three dots [...]</span> next to that dropdown</li>
                       <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export Active Route to Clipboard</span></li>
-                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import JSON</span> below</li>
+                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import</span> below — or tap the <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import</span> button above</li>
                     </ol>
                   </div>
                   <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
@@ -1533,7 +2068,7 @@ export function RoutePlannerPanel({
                     <ol className="list-decimal list-inside pl-1 space-y-1 text-wiki-muted dark:text-wiki-muted-dark leading-snug">
                       <li>Click that site's <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export by plugin/json</span> option</li>
                       <li>Your route will be copied to your clipboard</li>
-                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import JSON</span> below</li>
+                      <li>Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Import</span> above</li>
                     </ol>
                   </div>
                   <div className="border-t border-wiki-border dark:border-wiki-border-dark pt-2">
@@ -1541,7 +2076,7 @@ export function RoutePlannerPanel({
                       Exporting for RuneLite
                     </h4>
                     <p className="text-wiki-muted dark:text-wiki-muted-dark leading-snug">
-                      Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export JSON</span> to copy your plan. You can import this directly into the Task Tracker RuneLite plugin to see it in-game!
+                      Click <span className="font-semibold text-wiki-text dark:text-wiki-text-dark">Export</span> to copy your route JSON. You can import this directly into the Task Tracker RuneLite plugin to see it in-game!
                     </p>
                   </div>
                 </div>
@@ -1551,9 +2086,20 @@ export function RoutePlannerPanel({
             <button
               onClick={() => void handleImportOpen()}
               title="Import route from clipboard"
-              className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+              className="hidden sm:block px-2.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
             >
-              Import JSON
+              Import
+            </button>
+            <button
+              onClick={() => {
+                setImportError(null);
+                setImportStatus('idle');
+                setMobileImportOpen((v) => !v);
+              }}
+              title="Paste route JSON to import"
+              className="sm:hidden px-2.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+            >
+              Import
             </button>
             {importStatus === 'success' && (
               <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] flex items-start gap-2 max-w-xs">
@@ -1596,9 +2142,9 @@ export function RoutePlannerPanel({
             <button
               onClick={() => void handleExport()}
               title="Copy route JSON to clipboard"
-              className="px-2 py-0.5 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+              className="px-2.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
             >
-              Export JSON
+              Export
             </button>
             {exportError && (
               <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] text-red-600 dark:text-red-400 flex items-start gap-2 max-w-xs">
@@ -1626,6 +2172,35 @@ export function RoutePlannerPanel({
           </div>
         </div>
       </div>
+
+      {/* ── Mobile Input/Output Panels ──────────────────────────────────── */}
+      {mobileImportOpen && (
+        <div className="sm:hidden bg-wiki-surface dark:bg-wiki-surface-dark px-3 py-3 border-b border-wiki-border dark:border-wiki-border-dark">
+          <p className="text-[12px] font-semibold text-wiki-text dark:text-wiki-text-dark mb-1.5">
+            Paste your route JSON:
+          </p>
+          <textarea
+            value={mobileImportText}
+            onChange={(e) => setMobileImportText(e.target.value)}
+            placeholder="Paste exported route JSON here…"
+            className="w-full min-h-[80px] text-[13px] px-2 py-1.5 bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-border dark:border-wiki-border-dark text-wiki-text dark:text-wiki-text-dark placeholder:text-wiki-muted dark:placeholder:text-wiki-muted-dark focus:outline-none focus:border-wiki-link dark:focus:border-wiki-link-dark resize-y"
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button
+              onClick={() => setMobileImportOpen(false)}
+              className="px-3 py-1 text-[12px] border border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleMobileImportSubmit}
+              className="px-3 py-1 text-[12px] font-semibold text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-90 transition-opacity"
+            >
+              Import
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Route name field ────────────────────────────────────────────── */}
       <div className="bg-wiki-surface dark:bg-wiki-surface-dark px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-2 flex-wrap">
@@ -1858,54 +2433,90 @@ export function RoutePlannerPanel({
         </div>
       )}
 
-      {/* ── Table (shown when there are items OR multiple sections) ─────── */}
+      {/* ── Task list (shown when there are items OR multiple sections) ─── */}
       {(itemCount > 0 || route.sections.length > 1) && (
-        <div className="w-full relative">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            modifiers={[restrictToVerticalAxis]}
-            onDragEnd={handleDragEnd}
-          >
-            <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px]">
-              <thead>
-                <tr>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-1 py-2 font-semibold text-center w-12 cursor-default">#</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Area</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Name</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Task</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Requirements</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-20 cursor-default">Pts</th>
-                  <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Act</th>
-                </tr>
-              </thead>
+        layoutMode === 'mobile' ? (
+          /* Mobile: card layout */
+          <div className="p-2">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragEnd={handleDragEnd}
+            >
               <SortableContext
                 items={visibleRouteItemIds}
                 strategy={verticalListSortingStrategy}
               >
-                <tbody>
-                  {route.sections.map((section) => (
-                    <TableSection
-                      key={section.id}
-                      section={section}
-                                            itemIndexMap={itemIndexMap}
-                      taskMap={taskMap}
-                      isRunMode={isRunMode}
-                      onRemoveTask={onRemoveTask}
-                      onEditCustomTask={onEditCustomTask}
-                      onRenameSection={onRenameSection}
-                      onRemoveSection={onRemoveSection}
-                      addingCustomToSection={addingCustomToSection}
-                      setAddingCustomToSection={setAddingCustomToSection}
-                      onAddCustomConfirm={handleAddCustomConfirm}
-                      isDraggingSection={isDraggingSection}
-                    />
-                  ))}
-                </tbody>
+                {route.sections.map((section) => (
+                  <MobileRouteSection
+                    key={section.id}
+                    section={section}
+                    itemIndexMap={itemIndexMap}
+                    taskMap={taskMap}
+                    isRunMode={isRunMode}
+                    onRemoveTask={onRemoveTask}
+                    onEditCustomTask={onEditCustomTask}
+                    onRenameSection={onRenameSection}
+                    onRemoveSection={onRemoveSection}
+                    addingCustomToSection={addingCustomToSection}
+                    setAddingCustomToSection={setAddingCustomToSection}
+                    onAddCustomConfirm={handleAddCustomConfirm}
+                    isDraggingSection={isDraggingSection}
+                  />
+                ))}
               </SortableContext>
-            </table>
-          </DndContext>
-        </div>
+            </DndContext>
+          </div>
+        ) : (
+          /* Desktop/tablet: table layout */
+          <div className="w-full relative overflow-x-auto">
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragEnd={handleDragEnd}
+            >
+              <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px] sm:min-w-full">
+                <thead>
+                  <tr>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-1 py-2 font-semibold text-center w-12 cursor-default">#</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Area</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Name</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Task</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Requirements</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-20 cursor-default">Pts</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Act</th>
+                  </tr>
+                </thead>
+                <SortableContext
+                  items={visibleRouteItemIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <tbody>
+                    {route.sections.map((section) => (
+                      <TableSection
+                        key={section.id}
+                        section={section}
+                        itemIndexMap={itemIndexMap}
+                        taskMap={taskMap}
+                        isRunMode={isRunMode}
+                        onRemoveTask={onRemoveTask}
+                        onEditCustomTask={onEditCustomTask}
+                        onRenameSection={onRenameSection}
+                        onRemoveSection={onRemoveSection}
+                        addingCustomToSection={addingCustomToSection}
+                        setAddingCustomToSection={setAddingCustomToSection}
+                        onAddCustomConfirm={handleAddCustomConfirm}
+                        isDraggingSection={isDraggingSection}
+                      />
+                    ))}
+                  </tbody>
+                </SortableContext>
+              </table>
+            </DndContext>
+          </div>
+        )
       )}
     </div>
   );

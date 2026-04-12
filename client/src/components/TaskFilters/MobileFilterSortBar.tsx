@@ -25,6 +25,9 @@ interface MobileFilterSortBarProps {
   visiblePointsExcludingCompleted: number;
   totalAcquiredPoints: number;
   completedCount: number;
+  // ── Route planner summary props (used when mode === 'planner') ──────────
+  routeItemCount?: number;
+  routeTotalPoints?: number;
 }
 
 export const MobileFilterSortBar = memo(function MobileFilterSortBar({
@@ -45,6 +48,8 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   visiblePointsExcludingCompleted,
   totalAcquiredPoints,
   completedCount,
+  routeItemCount = 0,
+  routeTotalPoints = 0,
 }: MobileFilterSortBarProps) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
@@ -96,16 +101,28 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
       <div className="flex-1 overflow-y-auto p-4 mobile-filter-sheet-content">
         {/* Summary at the top of the filter sheet */}
         <div className="mb-4 pb-3 border-b border-wiki-border dark:border-wiki-border-dark">
-          <TaskSummary
-            variant="full"
-            loading={summaryLoading}
-            visibleCount={visibleCount}
-            totalCount={totalCount}
-            visiblePoints={visiblePoints}
-            visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
-            totalAcquiredPoints={totalAcquiredPoints}
-            completedCount={completedCount}
-          />
+          {mode === 'planner' ? (
+            <div className="text-[13px] text-wiki-text dark:text-wiki-text-dark">
+              {routeItemCount > 0 ? (
+                <span className="font-semibold tabular-nums">
+                  {routeItemCount} task{routeItemCount !== 1 ? 's' : ''} &middot; {routeTotalPoints} pts in route
+                </span>
+              ) : (
+                <span className="italic text-wiki-muted dark:text-wiki-muted-dark">No tasks in route yet.</span>
+              )}
+            </div>
+          ) : (
+            <TaskSummary
+              variant="full"
+              loading={summaryLoading}
+              visibleCount={visibleCount}
+              totalCount={totalCount}
+              visiblePoints={visiblePoints}
+              visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+              totalAcquiredPoints={totalAcquiredPoints}
+              completedCount={completedCount}
+            />
+          )}
         </div>
         <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} mode={mode} />
         {/* â”€â”€ Import section â€” tracker mode only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -239,18 +256,28 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
 
       </div>{/* end buttons row */}
 
-      {/* Compact summary strip â€” always visible in the sticky bar */}
+      {/* Compact summary strip — tracker stats or planner stats depending on mode */}
       <div className="px-1 pb-0.5">
-        <TaskSummary
-          variant="compact"
-          loading={summaryLoading}
-          visibleCount={visibleCount}
-          totalCount={totalCount}
-          visiblePoints={visiblePoints}
-          visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
-          totalAcquiredPoints={totalAcquiredPoints}
-          completedCount={completedCount}
-        />
+        {mode === 'planner' ? (
+          routeItemCount > 0 ? (
+            <span className="text-[12px] font-semibold tabular-nums text-wiki-text dark:text-wiki-text-dark">
+              {routeItemCount} task{routeItemCount !== 1 ? 's' : ''} &middot; {routeTotalPoints} pts
+            </span>
+          ) : (
+            <span className="text-[12px] italic text-wiki-muted dark:text-wiki-muted-dark">Route is empty</span>
+          )
+        ) : (
+          <TaskSummary
+            variant="compact"
+            loading={summaryLoading}
+            visibleCount={visibleCount}
+            totalCount={totalCount}
+            visiblePoints={visiblePoints}
+            visiblePointsExcludingCompleted={visiblePointsExcludingCompleted}
+            totalAcquiredPoints={totalAcquiredPoints}
+            completedCount={completedCount}
+          />
+        )}
       </div>
 
       {filterSheet}

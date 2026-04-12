@@ -13,6 +13,7 @@ import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
+import { getShareParam, decodeSharedRoute, clearShareParam } from '@/utils/routeShare';
 import type { SortField } from '@/types/task';
 
 // Memoize TaskTable to prevent rerenders when только showFilters changes
@@ -37,7 +38,46 @@ export default function App() {
     addSection, renameSection, removeSection,
   } = useRouteStore();
   // Current app mode. 'tracker' is the default on load — Route Planner is opt-in.
-  const [appMode, setAppMode] = useState<'tracker' | 'planner'>('tracker');
+  // If a shared route param (?r=) is present in the URL, start directly in planner mode
+  // so the planner panel is visible as soon as the shared route is consumed.
+  const [appMode, setAppMode] = useState<'tracker' | 'planner'>(() =>
+    new URLSearchParams(window.location.search).has('r') ? 'planner' : 'tracker',
+  );
+
+  // ── Shared-route hydration (from URL ?r= param) ───────────────────────────────
+  const [sharedRouteError, setSharedRouteError] = useState<string | null>(null);
+  const hasConsumedSharedRoute = useRef(false);
+  // Capture the raw ?r= param once on render (before clearShareParam removes it).
+  // Stored in a ref so the effect below can access it without re-running on change.
+  const pendingShareParam = useRef<string | null>(getShareParam());
+
+  // Decodes the compact v2 share payload once tasks have finished loading.
+  // Tasks must be loaded first because the v2 format references tasks by sortId,
+  // which requires a sortId→taskId lookup against the live task dataset.
+  // The URL param is cleared immediately so it doesn’t linger in the address bar.
+  useEffect(() => {
+    if (hasConsumedSharedRoute.current) return;
+    if (!pendingShareParam.current) {
+      hasConsumedSharedRoute.current = true; // no share param — nothing to do
+      return;
+    }
+    if (loading || tasks.length === 0) return; // wait for tasks to finish loading
+
+    hasConsumedSharedRoute.current = true;
+    const encoded = pendingShareParam.current;
+    pendingShareParam.current = null;
+
+    clearShareParam();
+
+    const result = decodeSharedRoute(encoded, tasks);
+    if (!result.ok) {
+      setSharedRouteError(result.error);
+      return;
+    }
+
+    replaceRoute(result.route);
+    // appMode is already initialised to 'planner' when ?r= is present
+  }, [loading, tasks, replaceRoute]);
   
   // ── Interaction State ───────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(true);
@@ -448,6 +488,21 @@ export default function App() {
         )}
 
         {/* In planner mode, the route planner sits inside this wiki-article. */}
+        {appMode === 'planner' && sharedRouteError && (
+          <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
+            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
+              <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+            </svg>
+            <span className="flex-1"><strong>Shared link error:</strong> {sharedRouteError}</span>
+            <button
+              onClick={() => setSharedRouteError(null)}
+              className="flex-shrink-0 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {appMode === 'planner' && !loading && (
           <div id="route-planner" className="mt-3 pb-3">
             <RoutePlannerPanel

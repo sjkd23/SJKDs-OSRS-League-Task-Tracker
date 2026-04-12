@@ -35,6 +35,7 @@ import {
 } from '@/lib/wikiIcons';
 import { TIER_COLOURS } from '@/components/TaskRow/TaskRow';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
+import { buildShareUrl } from '@/utils/routeShare';
 
 // ─── Drag modifier ─────────────────────────────────────────────────────────────
 
@@ -1743,6 +1744,12 @@ export function RoutePlannerPanel({
   const [exportStatus, setExportStatus] = useState<'idle' | 'copied'>('idle');
   const [exportError, setExportError] = useState<string | null>(null);
 
+  // ── Share state ────────────────────────────────────────────────────────────
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle');
+  const [shareError, setShareError] = useState<string | null>(null);
+  // Fallback URL shown in a copyable input when clipboard write is unavailable
+  const [shareFallbackUrl, setShareFallbackUrl] = useState<string | null>(null);
+
   const handleExport = useCallback(async () => {
     setExportStatus('idle');
     if (!route.name.trim()) {
@@ -1765,6 +1772,30 @@ export function RoutePlannerPanel({
       setExportError('Clipboard unavailable — could not copy the route.');
     }
   }, [route, itemCount, allTasks]);
+
+  const handleShare = useCallback(async () => {
+    setShareError(null);
+    setShareFallbackUrl(null);
+    setShareStatus('idle');
+    if (!route.name.trim()) {
+      setShareError('Route name cannot be blank before sharing.');
+      return;
+    }
+    if (itemCount === 0) {
+      setShareError('Add at least one task before sharing.');
+      return;
+    }
+    const url = buildShareUrl(route, allTasks);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareStatus('copied');
+      setTimeout(() => setShareStatus((s) => (s === 'copied' ? 'idle' : s)), 3000);
+    } catch {
+      // Clipboard blocked (common on some mobile browsers) — show a copyable fallback
+      setShareFallbackUrl(url);
+      setShareError('Could not copy automatically — copy the link below:');
+    }
+  }, [route, itemCount]);
 
   // ── Import state ───────────────────────────────────────────────────────────
   const [importStatus, setImportStatus] = useState<'idle' | 'success'>('idle');
@@ -2032,7 +2063,9 @@ export function RoutePlannerPanel({
             </span>
           )}
 
-          <div className="relative flex items-center gap-1.5 flex-shrink-0" ref={importHelpRef}>
+          {/* Utility cluster: Import + Export + Share grouped so they wrap as one unit on mobile */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="relative flex items-center gap-1.5" ref={importHelpRef}>
             <button
               onClick={() => setShowImportHelp((v) => !v)}
               aria-label="Help with route import"
@@ -2170,6 +2203,56 @@ export function RoutePlannerPanel({
               </div>
             )}
           </div>
+
+          {/* Thin separator between clipboard utilities and the share action */}
+          <div className="h-4 w-px bg-wiki-border dark:bg-wiki-border-dark mx-0.5" aria-hidden="true" />
+
+          {/* Share button — slightly distinct border to signal a different action */}
+          <div className="relative">
+            <button
+              onClick={() => void handleShare()}
+              title="Generate a shareable link for this route"
+              className="px-2.5 py-1 text-[12px] font-medium border border-wiki-link/40 dark:border-wiki-link-dark/40 text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors"
+            >
+              Share
+            </button>
+            {shareStatus === 'copied' && !shareError && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] text-green-700 dark:text-green-400 flex items-center gap-2 whitespace-nowrap">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0" aria-hidden="true">
+                  <path d="M10 2 4.5 8.5 2 6l-1 1 3.5 3.5 6.5-7.5z"/>
+                </svg>
+                Route link copied to clipboard.
+              </div>
+            )}
+            {shareError && (
+              <div className="absolute top-full right-0 mt-1 z-30 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md px-2.5 py-1.5 text-[12px] flex flex-col gap-1.5 max-w-xs">
+                <div className="flex items-start gap-2">
+                  <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-red-600 dark:text-red-400" aria-hidden="true">
+                    <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+                  </svg>
+                  <span className="flex-1 text-red-600 dark:text-red-400">{shareError}</span>
+                  <button
+                    onClick={() => { setShareError(null); setShareFallbackUrl(null); }}
+                    className="flex-shrink-0 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                    aria-label="Dismiss"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {shareFallbackUrl && (
+                  <input
+                    type="text"
+                    readOnly
+                    value={shareFallbackUrl}
+                    onClick={(e) => (e.target as HTMLInputElement).select()}
+                    className="w-full px-1.5 py-1 text-[11px] bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-border dark:border-wiki-border-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none focus:border-wiki-link dark:focus:border-wiki-link-dark cursor-text select-all"
+                    aria-label="Shareable route link"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+          </div>{/* end utility cluster */}
         </div>
       </div>
 

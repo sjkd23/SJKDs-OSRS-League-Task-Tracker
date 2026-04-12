@@ -12,11 +12,11 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-    },
+    // NOTE: Do not add an /api proxy here.
+    // In local dev, always open the Wrangler port (default 8788) instead of
+    // this Vite port directly. Wrangler (npm run pages:dev) intercepts /api/*
+    // requests and routes them to Pages Functions before proxying everything
+    // else to this Vite server. Proxying /api from Vite would only cause
+    // ECONNREFUSED because nothing listens at an extra backend port.
   },
 });

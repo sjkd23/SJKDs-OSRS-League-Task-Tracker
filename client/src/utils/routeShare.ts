@@ -7,6 +7,13 @@ export const SHARE_PARAM = 'r';
 
 const DEFAULT_TASK_TYPE = 'LEAGUE_5';
 
+/**
+ * Prefix character that distinguishes v2-compressed links from legacy v2-plain links.
+ * A compressed encoded value always starts with 'z'; a legacy value starts with 'e'
+ * (the first base64 char of '{"', i.e. 'eyJ').
+ */
+const COMPRESSED_PREFIX = 'z';
+
 // ─── Compact transport types (v2) ─────────────────────────────────────────────
 
 /**
@@ -47,9 +54,7 @@ interface SharePayloadV2 {
 
 // ─── Encoding helpers ─────────────────────────────────────────────────────────
 
-function toBase64Url(value: unknown): string {
-  const json = JSON.stringify(value);
-  const bytes = new TextEncoder().encode(json);
+function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary)
@@ -58,14 +63,117 @@ function toBase64Url(value: unknown): string {
     .replace(/=+$/, '');
 }
 
-function fromBase64Url(encoded: string): unknown {
+function base64UrlToBytes(encoded: string): Uint8Array<ArrayBuffer> | null {
   try {
     const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
     const binary = atob(padded);
-    const bytes = new Uint8Array(binary.length);
+    const buf = new ArrayBuffer(binary.length);
+    const bytes = new Uint8Array(buf);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+/** Legacy synchronous encoder — kept for the uncompressed fallback path. */
+function toBase64Url(value: unknown): string {
+  const json = JSON.stringify(value);
+  const bytes = new TextEncoder().encode(json);
+  return bytesToBase64Url(bytes);
+}
+
+/** Decode a legacy (uncompressed) base64url value into parsed JSON. */
+function fromBase64Url(encoded: string): unknown {
+  const bytes = base64UrlToBytes(encoded);
+  if (!bytes) return null;
+  try {
     return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compress a JSON-serialisable value with deflate-raw and return
+ * COMPRESSED_PREFIX + base64url(compressed bytes).
+ *
+ * Uses the browser's built-in CompressionStream API (Chrome 80+, Firefox 113+,
+ * Safari 16.4+).  Falls back to the uncompressed base64url encoding if the API
+ * is unavailable so old browsers still get a working (longer) link.
+ */
+async function compressPayload(value: unknown): Promise<string> {
+  const json = JSON.stringify(value);
+  const input = new TextEncoder().encode(json);
+
+  if (typeof CompressionStream === 'undefined') {
+    // Graceful fallback for environments without CompressionStream support.
+    return toBase64Url(value);
+  }
+
+  const cs = new CompressionStream('deflate-raw');
+  const writer = cs.writable.getWriter();
+  const reader = cs.readable.getReader();
+  const chunks: Uint8Array[] = [];
+
+  const readAll = async () => {
+    for (;;) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      chunks.push(chunk);
+    }
+  };
+
+  const reading = readAll();
+  await writer.write(input);
+  await writer.close();
+  await reading;
+
+  const totalLen = chunks.reduce((a, b) => a + b.length, 0);
+  const result = new Uint8Array(totalLen);
+  let off = 0;
+  for (const c of chunks) { result.set(c, off); off += c.length; }
+
+  return COMPRESSED_PREFIX + bytesToBase64Url(result);
+}
+
+/**
+ * Decompress a COMPRESSED_PREFIX-prefixed base64url value into parsed JSON.
+ * Returns null on any decoding or decompression failure.
+ */
+async function decompressPayload(encoded: string): Promise<unknown> {
+  // Strip the leading 'z' prefix before decoding bytes.
+  const bytes = base64UrlToBytes(encoded.slice(COMPRESSED_PREFIX.length));
+  if (!bytes) return null;
+
+  if (typeof DecompressionStream === 'undefined') return null;
+
+  try {
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    const reader = ds.readable.getReader();
+    const chunks: Uint8Array[] = [];
+
+    const readAll = async () => {
+      for (;;) {
+        const { done, value: chunk } = await reader.read();
+        if (done) break;
+        chunks.push(chunk);
+      }
+    };
+
+    const reading = readAll();
+    await writer.write(bytes);
+    await writer.close();
+    await reading;
+
+    const totalLen = chunks.reduce((a, b) => a + b.length, 0);
+    const result = new Uint8Array(totalLen);
+    let off = 0;
+    for (const c of chunks) { result.set(c, off); off += c.length; }
+
+    return JSON.parse(new TextDecoder().decode(result));
   } catch {
     return null;
   }
@@ -194,18 +302,24 @@ export function getShareParam(): string | null {
 /**
  * Generate a compact shareable URL for the route.
  *
- * Uses the v2 compact payload format:
+ * Encoding: deflate-raw(JSON(v2-payload)) → base64url, prefixed with 'z'.
+ * Old uncompressed links (no 'z' prefix) continue to decode correctly.
+ *
+ * Uses the v2 compact payload schema:
  *   - Tasks referenced by sortId integer (1–4 digits) instead of full ID strings
  *   - Short field names, defaults omitted, UUIDs regenerated on load
- *   - Produces URLs ~5–8× shorter than a naive full-object encoding
+ *   - deflate-raw compression yields 4–8× shorter links for typical routes
+ *
+ * Falls back to uncompressed base64url if CompressionStream is unavailable.
  *
  * @param route  The route to share
  * @param tasks  All available tasks (needed to map taskId → sortId)
  */
-export function buildShareUrl(route: Route, tasks: TaskRef[]): string {
+export async function buildShareUrl(route: Route, tasks: TaskRef[]): Promise<string> {
   const payload = buildCompactPayload(route, tasks);
+  const encoded = await compressPayload(payload);
   const url = new URL(window.location.href);
-  url.searchParams.set(SHARE_PARAM, toBase64Url(payload));
+  url.searchParams.set(SHARE_PARAM, encoded);
   url.hash = '';
   return url.toString();
 }
@@ -213,16 +327,29 @@ export function buildShareUrl(route: Route, tasks: TaskRef[]): string {
 /**
  * Decode a raw `?r=` param value into a Route.
  *
+ * Supports both the compressed format ('z' prefix → deflate-raw → JSON)
+ * and the legacy uncompressed format (plain base64url JSON) for backward
+ * compatibility with links generated before compression was added.
+ *
  * Requires the full task list (to map compact sortId integers back to taskIds).
  * Call this only once tasks have finished loading.
  *
  * Returns { ok: false } on any decoding or validation failure.
  */
-export function decodeSharedRoute(
+export async function decodeSharedRoute(
   encoded: string,
   tasks: TaskRef[],
-): { ok: true; route: Route } | { ok: false; error: string } {
-  const raw = fromBase64Url(encoded);
+): Promise<{ ok: true; route: Route } | { ok: false; error: string }> {
+  let raw: unknown;
+
+  if (encoded.startsWith(COMPRESSED_PREFIX)) {
+    // New compressed format: 'z' + base64url(deflate-raw(JSON))
+    raw = await decompressPayload(encoded);
+  } else {
+    // Legacy uncompressed format: base64url(JSON) — backward compat
+    raw = fromBase64Url(encoded);
+  }
+
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, error: 'Invalid share link — the route data could not be decoded.' };
   }
@@ -254,4 +381,116 @@ export function clearShareParam(): void {
   const url = new URL(window.location.href);
   url.searchParams.delete(SHARE_PARAM);
   window.history.replaceState(null, '', url.toString());
+}
+
+// ─── KV-backed short-link API ─────────────────────────────────────────────────
+
+/**
+ * Returns true if the `?r=` value is a KV-backed short share ID rather than
+ * the old locally-encoded (base64url / compressed) format.
+ *
+ * Old encoded values are always ≥ 50 characters (typically 100–400 chars).
+ * Short KV IDs are ≤ 20 characters.
+ */
+export function isShortShareId(encoded: string): boolean {
+  return encoded.length < 50;
+}
+
+/**
+ * Build the compact v2 payload and POST it to the share-creation endpoint.
+ * Returns { ok: true, url } with the short shareable URL on success.
+ * Returns { ok: false, error } with a human-readable message on failure.
+ */
+export async function createShareLink(
+  route: Route,
+  tasks: TaskRef[],
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const payload = buildCompactPayload(route, tasks);
+
+  let response: Response;
+  try {
+    response = await fetch('/api/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    return {
+      ok: false,
+      error: 'Could not reach the share server. Check your connection and try again.',
+    };
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return { ok: false, error: `Share server returned an unreadable response (${response.status}).` };
+  }
+
+  if (!response.ok) {
+    const msg =
+      typeof data.error === 'string' ? data.error : `Share server error (${response.status}).`;
+    return { ok: false, error: msg };
+  }
+
+  if (typeof data.url !== 'string' || !data.url) {
+    return { ok: false, error: 'Share server did not return a valid URL.' };
+  }
+
+  return { ok: true, url: data.url };
+}
+
+/**
+ * Fetch a KV-backed shared route by its short ID and decode it into a Route.
+ * Requires the full task list (to map compact sortId integers back to taskIds).
+ *
+ * Returns { ok: true, route } on success or { ok: false, error } on failure.
+ */
+export async function loadSharedRouteFromApi(
+  id: string,
+  tasks: TaskRef[],
+): Promise<{ ok: true; route: Route } | { ok: false; error: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/share/${encodeURIComponent(id)}`);
+  } catch {
+    return {
+      ok: false,
+      error: 'Could not load the shared route. Check your connection and try again.',
+    };
+  }
+
+  let data: Record<string, unknown>;
+  try {
+    data = (await response.json()) as Record<string, unknown>;
+  } catch {
+    return { ok: false, error: `Share server returned an unreadable response (${response.status}).` };
+  }
+
+  if (!response.ok) {
+    const msg =
+      typeof data.error === 'string'
+        ? data.error
+        : response.status === 404
+          ? 'This share link has expired or does not exist.'
+          : `Share server error (${response.status}).`;
+    return { ok: false, error: msg };
+  }
+
+  if (!data.route || typeof data.route !== 'object') {
+    return { ok: false, error: 'Share server returned invalid route data.' };
+  }
+
+  const obj = data.route as Record<string, unknown>;
+  if (obj.v !== 2) {
+    return { ok: false, error: 'Unsupported share format returned from server.' };
+  }
+
+  const route = decodeV2Payload(obj as unknown as SharePayloadV2, tasks);
+  if (!route) {
+    return { ok: false, error: 'The shared route data is malformed or empty.' };
+  }
+
+  return { ok: true, route };
 }

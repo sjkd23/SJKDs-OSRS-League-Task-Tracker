@@ -35,7 +35,7 @@ import {
 } from '@/lib/wikiIcons';
 import { TIER_COLOURS } from '@/components/TaskRow/TaskRow';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
-import { buildShareUrl } from '@/utils/routeShare';
+import { createShareLink } from '@/utils/routeShare';
 
 // ─── Drag modifier ─────────────────────────────────────────────────────────────
 
@@ -1785,17 +1785,21 @@ export function RoutePlannerPanel({
       setShareError('Add at least one task before sharing.');
       return;
     }
-    const url = buildShareUrl(route, allTasks);
+    const result = await createShareLink(route, allTasks);
+    if (!result.ok) {
+      setShareError(result.error);
+      return;
+    }
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(result.url);
       setShareStatus('copied');
       setTimeout(() => setShareStatus((s) => (s === 'copied' ? 'idle' : s)), 3000);
     } catch {
       // Clipboard blocked (common on some mobile browsers) — show a copyable fallback
-      setShareFallbackUrl(url);
+      setShareFallbackUrl(result.url);
       setShareError('Could not copy automatically — copy the link below:');
     }
-  }, [route, itemCount]);
+  }, [route, itemCount, allTasks]);
 
   // ── Import state ───────────────────────────────────────────────────────────
   const [importStatus, setImportStatus] = useState<'idle' | 'success'>('idle');

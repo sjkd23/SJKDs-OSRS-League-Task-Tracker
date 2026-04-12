@@ -13,7 +13,7 @@ import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
-import { getShareParam, decodeSharedRoute, clearShareParam } from '@/utils/routeShare';
+import { getShareParam, decodeSharedRoute, clearShareParam, isShortShareId, loadSharedRouteFromApi } from '@/utils/routeShare';
 import type { SortField } from '@/types/task';
 
 // Memoize TaskTable to prevent rerenders when только showFilters changes
@@ -69,14 +69,18 @@ export default function App() {
 
     clearShareParam();
 
-    const result = decodeSharedRoute(encoded, tasks);
-    if (!result.ok) {
-      setSharedRouteError(result.error);
-      return;
-    }
+    const loader = isShortShareId(encoded)
+      ? loadSharedRouteFromApi(encoded, tasks)
+      : decodeSharedRoute(encoded, tasks);
 
-    replaceRoute(result.route);
-    // appMode is already initialised to 'planner' when ?r= is present
+    void loader.then((result) => {
+      if (!result.ok) {
+        setSharedRouteError(result.error);
+        return;
+      }
+      replaceRoute(result.route);
+      // appMode is already initialised to 'planner' when ?r= is present
+    });
   }, [loading, tasks, replaceRoute]);
   
   // ── Interaction State ───────────────────────────────────────────────

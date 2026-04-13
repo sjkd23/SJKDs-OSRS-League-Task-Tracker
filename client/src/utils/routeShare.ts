@@ -400,7 +400,7 @@ function decodeV3Payload(payload: SharePayloadV3, tasks: TaskRef[]): Route | nul
           const taskId = sortIdToTaskId.get(rawItem[0]);
           if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
         } else if (rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)) {
-          const ri = rawItem as Record<string, unknown>;
+          const ri = rawItem as unknown as Record<string, unknown>;
 
           if ('ti' in ri && typeof ri.ti === 'number') {
             // Located regular task { ti, nt?, loc }
@@ -418,18 +418,17 @@ function decodeV3Payload(payload: SharePayloadV3, tasks: TaskRef[]): Route | nul
             }
           } else if ('cn' in ri && typeof ri.cn === 'string' && ri.cn.trim()) {
             // Custom task { cn, cd?, nt?, ic?, loc? }
-            const ci = ri as CustomShareItemV3;
             const customItem: RouteItem = {
               taskId: crypto.randomUUID(),
               routeItemId: crypto.randomUUID(),
               isCustom: true,
-              customName: ci.cn.slice(0, 200),
+              customName: ri.cn.slice(0, 200),
             };
-            if (ci.cd) customItem.customDescription = ci.cd.slice(0, 400);
-            if (ci.nt) customItem.note = ci.nt.slice(0, 400);
-            if (ci.ic) customItem.customIcon = ci.ic.slice(0, 200);
-            if (Array.isArray(ci.loc) && ci.loc.length === 3) {
-              const [x, y, plane] = ci.loc as [unknown, unknown, unknown];
+            if (typeof ri.cd === 'string' && ri.cd) customItem.customDescription = ri.cd.slice(0, 400);
+            if (typeof ri.nt === 'string' && ri.nt) customItem.note = ri.nt.slice(0, 400);
+            if (typeof ri.ic === 'string' && ri.ic) customItem.customIcon = ri.ic.slice(0, 200);
+            if (Array.isArray(ri.loc) && ri.loc.length === 3) {
+              const [x, y, plane] = ri.loc as [unknown, unknown, unknown];
               if (typeof x === 'number' && typeof y === 'number' && typeof plane === 'number') {
                 customItem.location = { x, y, plane };
               }
@@ -665,11 +664,15 @@ export async function loadSharedRouteFromApi(
   }
 
   const obj = data.route as Record<string, unknown>;
-  if (obj.v !== 2) {
+  let route: Route | null = null;
+  if (obj.v === 3) {
+    route = decodeV3Payload(obj as unknown as SharePayloadV3, tasks);
+  } else if (obj.v === 2) {
+    route = decodeV2Payload(obj as unknown as SharePayloadV2, tasks);
+  } else {
     return { ok: false, error: 'Unsupported share format returned from server.' };
   }
 
-  const route = decodeV2Payload(obj as unknown as SharePayloadV2, tasks);
   if (!route) {
     return { ok: false, error: 'The shared route data is malformed or empty.' };
   }

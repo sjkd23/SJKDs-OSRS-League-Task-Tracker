@@ -8,8 +8,7 @@
 
 /**
  * World-map coordinates for a route step.
- * Used in future map view; stored on RouteItem but not yet serialised to
- * share links or plugin export format.
+ * Stored on RouteItem and preserved across plugin import/export and share links.
  */
 export interface RouteLocation {
   x: number;

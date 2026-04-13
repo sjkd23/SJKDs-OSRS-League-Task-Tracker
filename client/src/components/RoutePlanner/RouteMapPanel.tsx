@@ -25,6 +25,7 @@ import L from 'leaflet';
 import type { RouteLocation } from '@/types/route';
 import {
   osrsToLatLng,
+  latLngToOsrs,
   osrsTileUrl,
   DEFAULT_CENTER,
   DEFAULT_ZOOM,
@@ -58,7 +59,6 @@ function makeMarkerIcon(
   listPos: number,
   isSelected: boolean,
   isCompleted: boolean,
-  isCustom: boolean,
 ): L.DivIcon {
   const fill   = isSelected  ? '#0052cc'  // wiki-style blue for selected
                : isCompleted ? '#3d7a3d'
@@ -142,6 +142,10 @@ export interface RouteMapPanelProps {
   focusedItemId: string | null;
   /** Called when the user clicks a map marker (drives list scroll). */
   onMarkerClick: (routeItemId: string) => void;
+  /** Called when the user clicks the map during placement mode. */
+  onMapClick?: (location: RouteLocation) => void;
+  /** True while the user is picking a location for a specific route item. */
+  isPlacementMode?: boolean;
   /**
    * Parent-controlled container height in px. When this changes the panel
    * calls map.invalidateSize() so Leaflet re-measures its container.
@@ -151,7 +155,14 @@ export interface RouteMapPanelProps {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
-export function RouteMapPanel({ markers, focusedItemId, onMarkerClick, containerHeight }: RouteMapPanelProps) {
+export function RouteMapPanel({
+  markers,
+  focusedItemId,
+  onMarkerClick,
+  onMapClick,
+  isPlacementMode = false,
+  containerHeight,
+}: RouteMapPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -262,10 +273,10 @@ export function RouteMapPanel({ markers, focusedItemId, onMarkerClick, container
         m.listPos,
         m.routeItemId === focusedItemId,
         m.isCompleted,
-        m.isCustom,
       );
       const marker = L.marker(pos, {
         icon,
+        bubblingMouseEvents: false,
         zIndexOffset: m.routeItemId === focusedItemId ? 1000 : 0,
       });
       // Tooltip shown on hover — click is reserved for selection.
@@ -280,6 +291,31 @@ export function RouteMapPanel({ markers, focusedItemId, onMarkerClick, container
       leafletMarkersRef.current.set(m.routeItemId, marker);
     });
   }, [map, planeMarkers, focusedItemId, stableOnMarkerClick]);
+
+  // ── Placement clicks (map surface) ───────────────────────────────────────
+  useEffect(() => {
+    if (!map || !onMapClick) return;
+
+    const handleClick = (e: L.LeafletMouseEvent) => {
+      const { x, y } = latLngToOsrs(map, e.latlng);
+      onMapClick({ x, y, plane });
+    };
+
+    map.on('click', handleClick);
+    return () => {
+      map.off('click', handleClick);
+    };
+  }, [map, onMapClick, plane]);
+
+  // ── Cursor hint for placement mode ───────────────────────────────────────
+  useEffect(() => {
+    if (!map) return;
+    const container = map.getContainer();
+    container.style.cursor = isPlacementMode ? 'crosshair' : '';
+    return () => {
+      container.style.cursor = '';
+    };
+  }, [map, isPlacementMode]);
 
   // ── Fly to focused marker (auto-switch plane when needed) ───────────────────
   const allMarkersRef = useRef(markers);

@@ -56,3 +56,13 @@ export function osrsToLatLng(map: L.Map, x: number, y: number): L.LatLng {
   const py = MAP_HEIGHT_MAX_PX - ((y - RS_OFFSET_Y) * RS_TILE_PX);
   return map.unproject(L.point(px, py), OSRS_MAX_ZOOM);
 }
+
+/**
+ * Convert a Leaflet lat/lng click point back into OSRS world tile coordinates.
+ */
+export function latLngToOsrs(map: L.Map, latlng: L.LatLng): { x: number; y: number } {
+  const point = map.project(latlng, OSRS_MAX_ZOOM);
+  const x = Math.floor(((point.x - (RS_TILE_PX / 4)) / RS_TILE_PX) + RS_OFFSET_X);
+  const y = Math.floor(((MAP_HEIGHT_MAX_PX - point.y) / RS_TILE_PX) + RS_OFFSET_Y);
+  return { x, y };
+}

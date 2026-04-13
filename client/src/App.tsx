@@ -35,7 +35,7 @@ export default function App() {
     route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
     reorderSections, resetRoute,
     updateRouteName, replaceRoute, addCustomTask, editCustomTask,
-    addSection, renameSection, removeSection,
+    addSection, renameSection, removeSection, setRouteItemLocation,
   } = useRouteStore();
   // Current app mode. 'tracker' is the default on load — Route Planner is opt-in.
   // If a shared route param (?r=) is present in the URL, start directly in planner mode
@@ -505,8 +505,10 @@ export default function App() {
           <div id="route-planner" className="mt-3 pb-3">
             <RoutePlannerPanel
               route={route}
-              filters={filters}                isRunMode={isRunMode}
-                setIsRunMode={setIsRunMode}              allTasks={allTaskViews}
+              filters={filters}
+              isRunMode={isRunMode}
+              setIsRunMode={setIsRunMode}
+              allTasks={allTaskViews}
               onUpdateRouteName={updateRouteName}
               onRemoveTask={removeTaskFromRoute}
               onReorderItems={reorderItems}
@@ -518,6 +520,7 @@ export default function App() {
               onAddSection={addSection}
               onRenameSection={renameSection}
               onRemoveSection={removeSection}
+              onSetRouteItemLocation={setRouteItemLocation}
             />
           </div>
         )}

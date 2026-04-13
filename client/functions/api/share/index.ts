@@ -1,26 +1,64 @@
 /**
  * POST /api/share
  *
- * Accepts a SharePayloadV2 object and stores it in Cloudflare KV under a
- * generated short ID. Returns { id, url } on success.
+ * Accepts a SharePayloadV2 or SharePayloadV3 object and stores it in
+ * Cloudflare KV under a generated short ID. Returns { id, url } on success.
+ *
+ * Schema versions accepted:
+ *   v: 2  — original compact format (tasks as bare sortId numbers / [id, note] tuples)
+ *   v: 3  — adds located-task objects { ti, nt?, loc } and extended custom items
+ *            { cn, cd?, nt?, ic?, loc? } with optional [x,y,plane] coordinate tuples
  */
 
 interface Env {
   ROUTE_SHARES: KVNamespace;
 }
 
-interface ShareSection {
+// ─── v2 item shapes ───────────────────────────────────────────────────────────
+
+type CustomItemV2 = { cn: string; cd?: string; nt?: string };
+type ShareItemV2 = number | [number, string] | CustomItemV2;
+
+interface ShareSectionV2 {
   n: string;
   d?: string;
-  i: (number | [number, string] | { cn: string; cd?: string; nt?: string })[];
+  i: ShareItemV2[];
 }
 
 interface SharePayloadV2 {
   v: 2;
   n: string;
   t?: string;
-  s: ShareSection[];
+  s: ShareSectionV2[];
 }
+
+// ─── v3 item shapes ───────────────────────────────────────────────────────────
+
+/** Compact world-map coordinate tuple: [x, y, plane]. */
+type LocTuple = [number, number, number];
+
+/** Regular task item that carries an explicit location. */
+type LocatedTaskItem = { ti: number; nt?: string; loc: LocTuple };
+
+/** Custom (non-game) task item in v3 format. */
+type CustomItemV3 = { cn: string; cd?: string; nt?: string; ic?: string; loc?: LocTuple };
+
+type ShareItemV3 = number | [number, string] | LocatedTaskItem | CustomItemV3;
+
+interface ShareSectionV3 {
+  n: string;
+  d?: string;
+  i: ShareItemV3[];
+}
+
+interface SharePayloadV3 {
+  v: 3;
+  n: string;
+  t?: string;
+  s: ShareSectionV3[];
+}
+
+type SharePayload = SharePayloadV2 | SharePayloadV3;
 
 /** Generate a 10-char URL-safe alphanumeric ID. */
 function generateId(): string {
@@ -33,12 +71,13 @@ function generateId(): string {
 /**
  * Validate the top-level shape of the incoming body.
  * Returns the typed payload or null if invalid.
+ * Accepts both v2 (no location) and v3 (location-aware) payloads.
  */
-function validatePayload(raw: unknown): SharePayloadV2 | null {
+function validatePayload(raw: unknown): SharePayload | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
 
-  if (obj.v !== 2) return null;
+  if (obj.v !== 2 && obj.v !== 3) return null;
   if (typeof obj.n !== 'string' || !obj.n.trim() || obj.n.length > 200) return null;
   if (!Array.isArray(obj.s) || obj.s.length === 0 || obj.s.length > 100) return null;
 
@@ -52,49 +91,83 @@ function validatePayload(raw: unknown): SharePayloadV2 | null {
     if (totalItems > 2000) return null;
   }
 
-  return obj as unknown as SharePayloadV2;
+  return obj as unknown as SharePayload;
+}
+
+/**
+ * Validate that a value is a well-formed coordinate tuple [x, y, plane].
+ * All three elements must be finite integers within plausible OSRS map bounds.
+ */
+function isValidLocTuple(v: unknown): v is LocTuple {
+  if (!Array.isArray(v) || v.length !== 3) return false;
+  const [x, y, plane] = v as [unknown, unknown, unknown];
+  return (
+    typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 16383 &&
+    typeof y === 'number' && Number.isFinite(y) && y >= 0 && y <= 16383 &&
+    typeof plane === 'number' && Number.isFinite(plane) && plane >= 0 && plane <= 3
+  );
 }
 
 /** Deep-sanitize the validated payload before storing it. */
-function sanitizePayload(payload: SharePayloadV2): SharePayloadV2 {
-  const sanitized: SharePayloadV2 = {
-    v: 2,
+function sanitizePayload(payload: SharePayload): SharePayload {
+  const version = payload.v; // preserved as-is (2 or 3)
+
+  const sanitizedSections = payload.s.map((sec) => {
+    const sanitizedItems: (ShareItemV2 | ShareItemV3)[] = (sec.i ?? []).flatMap(
+      (item): (ShareItemV2 | ShareItemV3)[] => {
+        // number — regular task, no note, no location
+        if (typeof item === 'number') return [item];
+
+        // [number, string] — regular task with note, no location
+        if (
+          Array.isArray(item) &&
+          item.length === 2 &&
+          typeof item[0] === 'number' &&
+          typeof item[1] === 'string'
+        ) {
+          return [[item[0], item[1].slice(0, 400)]];
+        }
+
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const raw = item as Record<string, unknown>;
+
+          // { ti, nt?, loc } — located regular task (v3 only)
+          if (typeof raw.ti === 'number') {
+            if (!isValidLocTuple(raw.loc)) return []; // loc is required for this shape
+            const out: LocatedTaskItem = { ti: raw.ti, loc: raw.loc };
+            if (typeof raw.nt === 'string' && raw.nt) out.nt = raw.nt.slice(0, 400);
+            return [out];
+          }
+
+          // { cn, cd?, nt?, ic?, loc? } — custom task (v2 or v3)
+          if (typeof raw.cn === 'string' && raw.cn.trim()) {
+            const out: CustomItemV3 = { cn: raw.cn.slice(0, 200) };
+            if (typeof raw.cd === 'string' && raw.cd) out.cd = raw.cd.slice(0, 400);
+            if (typeof raw.nt === 'string' && raw.nt) out.nt = raw.nt.slice(0, 400);
+            if (typeof raw.ic === 'string' && raw.ic) out.ic = raw.ic.slice(0, 200);
+            if (isValidLocTuple(raw.loc)) out.loc = raw.loc;
+            return [out];
+          }
+        }
+
+        // Unrecognised shape — drop it.
+        return [];
+      },
+    );
+
+    const sanitizedSec: ShareSectionV2 | ShareSectionV3 = {
+      n: (typeof sec.n === 'string' ? sec.n : '').trim().slice(0, 200) || 'Main',
+      i: sanitizedItems as ShareItemV2[],
+    };
+    if (typeof sec.d === 'string' && sec.d) sanitizedSec.d = sec.d.slice(0, 500);
+    return sanitizedSec;
+  });
+
+  const sanitized: SharePayload = {
+    v: version,
     n: payload.n.trim().slice(0, 200),
-    s: payload.s.map((sec) => {
-      const sanitizedSec: ShareSection = {
-        n: (typeof sec.n === 'string' ? sec.n : '').trim().slice(0, 200) || 'Main',
-        i: (sec.i ?? []).flatMap(
-          (
-            item,
-          ): (number | [number, string] | { cn: string; cd?: string; nt?: string })[] => {
-            if (typeof item === 'number') return [item];
-            if (
-              Array.isArray(item) &&
-              item.length === 2 &&
-              typeof item[0] === 'number' &&
-              typeof item[1] === 'string'
-            ) {
-              return [[item[0], item[1].slice(0, 400)]];
-            }
-            if (item && typeof item === 'object' && !Array.isArray(item)) {
-              const ci = item as { cn?: unknown; cd?: unknown; nt?: unknown };
-              if (typeof ci.cn === 'string' && ci.cn.trim()) {
-                const out: { cn: string; cd?: string; nt?: string } = {
-                  cn: ci.cn.slice(0, 200),
-                };
-                if (typeof ci.cd === 'string' && ci.cd) out.cd = ci.cd.slice(0, 400);
-                if (typeof ci.nt === 'string' && ci.nt) out.nt = ci.nt.slice(0, 400);
-                return [out];
-              }
-            }
-            return [];
-          },
-        ),
-      };
-      if (typeof sec.d === 'string' && sec.d) sanitizedSec.d = sec.d.slice(0, 500);
-      return sanitizedSec;
-    }),
-  };
+    s: sanitizedSections as SharePayloadV2['s'],
+  } as SharePayload;
 
   if (typeof payload.t === 'string') sanitized.t = payload.t.slice(0, 50);
   return sanitized;

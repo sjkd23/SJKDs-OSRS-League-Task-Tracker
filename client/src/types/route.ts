@@ -6,6 +6,17 @@
  * on top of these types without changing the core shape.
  */
 
+/**
+ * World-map coordinates for a route step.
+ * Used in future map view; stored on RouteItem but not yet serialised to
+ * share links or plugin export format.
+ */
+export interface RouteLocation {
+  x: number;
+  y: number;
+  plane: number;
+}
+
 /** A single task reference within a route section. */
 export interface RouteItem {
   /**
@@ -14,7 +25,15 @@ export interface RouteItem {
    * used purely as a stable dnd-kit / React key — it has no game meaning.
    */
   taskId: string;
-  /** Optional annotation visible in the plugin. Phase 2+. */
+  /**
+   * Stable per-entry identity used for DnD ordering and future map-marker sync.
+   * Distinct from taskId — allows the same task to appear more than once in a
+   * route (future feature) and gives map pins a stable anchor.
+   * Always present after the migration pass in useRouteStore; assigned by every
+   * store mutation and import parser that creates new RouteItems.
+   */
+  routeItemId: string;
+  /** Optional annotation visible in the plugin. */
   note?: string;
   /**
    * Source section name preserved during import.
@@ -22,6 +41,12 @@ export interface RouteItem {
    * All items remain in sections[0] internally for simplified DnD management.
    */
   sectionName?: string;
+  /**
+   * Optional world-map location for this route step.
+   * Preserved across plugin import/export and share encode/decode (v3+).
+   * Map UI (Phase 2+): full pin editing on top of this stored coordinate.
+   */
+  location?: RouteLocation;
 
   // ─── Custom task fields ─────────────────────────────────────────────────
   /**
@@ -34,6 +59,12 @@ export interface RouteItem {
   customName?: string;
   /** Display description shown in the Task column for custom tasks. */
   customDescription?: string;
+  /**
+   * Optional icon identifier for custom tasks.
+   * Sourced from the plugin export's `customItem.icon` field.
+   * Preserved across import/export and share encode/decode (v3+).
+   */
+  customIcon?: string;
 }
 
 /**

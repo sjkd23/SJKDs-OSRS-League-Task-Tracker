@@ -34,8 +34,10 @@ import {
   REGION_COLOUR
 } from '@/lib/wikiIcons';
 import { TIER_COLOURS } from '@/components/TaskRow/TaskRow';
-import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { createShareLink } from '@/utils/routeShare';
+import { buildPluginExportPayload, parsePluginRoute, isNaReqs } from '@/utils/routePluginFormat';
+import { RouteMapPanel, type MarkerViewModel } from './RouteMapPanel';
+import { MapRouteList } from './MapRouteList';
 
 // ─── Drag modifier ─────────────────────────────────────────────────────────────
 
@@ -43,209 +45,6 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
   x: 0,
 });
-
-// ─── Export / Import helpers ───────────────────────────────────────────────────
-
-function isNaReqs(text: string | undefined): boolean {
-  const t = text?.trim();
-  return !t || t === 'N/A' || t === '—' || t === '-';
-}
-
-function buildExportPayload(route: Route, allTasks: TaskView[]) {
-  const taskMap = new Map<string, number>();
-  for (const t of allTasks) {
-    taskMap.set(t.id, t.structId);
-  }
-
-  return {
-    id: route.id,
-    name: route.name.trim(),
-    taskType: CURRENT_LEAGUE.pluginTaskType,
-    author: route.author ?? '',
-    description: route.description ?? '',
-    completed: [] as number[],
-    sections: route.sections.map((section) => ({
-      id: section.id,
-      name: section.name,
-      description: section.description ?? '',
-      items: section.items.map((item) => {
-        if (item.isCustom) {
-          return {
-            taskId: null,
-            customItem: {
-              id: item.taskId,
-              label: item.customName ?? '',
-              description: item.customDescription ?? item.customName ?? '',
-            },
-            ...(item.note ? { note: item.note } : {}),
-          };
-        }
-        let numericId = taskMap.get(item.taskId);
-        if (numericId === undefined) {
-          const match = item.taskId.match(/^task-(\d+)/);
-          numericId = match ? parseInt(match[1], 10) : 0;
-        }
-        return {
-          taskId: numericId,
-          ...(item.note ? { note: item.note } : {}),
-        };
-      }),
-    })),
-  };
-}
-
-function parsePluginRoute(
-  jsonText: string,
-  allTasks: TaskView[],
-): { ok: true; route: Route; imported: number; customCount: number; unmapped: number } | { ok: false; error: string } {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(jsonText);
-  } catch {
-    return { ok: false, error: 'Invalid JSON — could not parse the text.' };
-  }
-
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return { ok: false, error: 'Expected a JSON object at the top level.' };
-  }
-
-  const obj = raw as Record<string, unknown>;
-
-  if (typeof obj.name !== 'string' || !obj.name.trim()) {
-    return { ok: false, error: 'Route is missing a valid "name" field.' };
-  }
-
-  if (!Array.isArray(obj.sections) || obj.sections.length === 0) {
-    return { ok: false, error: 'Route is missing a valid "sections" array.' };
-  }
-
-  const structIdToAppId = new Map<number, string>();
-  for (const t of allTasks) {
-    structIdToAppId.set(t.structId, t.id);
-  }
-
-  let unmapped = 0;
-  let customCount = 0;
-  let imported = 0;
-
-  const parsedSections: RouteSection[] = [];
-
-  for (const rawSection of obj.sections as unknown[]) {
-    const s =
-      typeof rawSection === 'object' && rawSection !== null
-        ? (rawSection as Record<string, unknown>)
-        : {};
-    const rawItems = Array.isArray(s.items) ? s.items : [];
-    const sectionName =
-      typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Main';
-
-    const sectionItems: RouteItem[] = [];
-
-    for (const rawItem of rawItems) {
-      if (typeof rawItem !== 'object' || rawItem === null) continue;
-      const it = rawItem as Record<string, unknown>;
-
-      const rawTaskId = it.taskId;
-      const numericId =
-        typeof rawTaskId === 'number'
-          ? rawTaskId
-          : typeof rawTaskId === 'string'
-            ? parseInt(rawTaskId, 10)
-            : NaN;
-
-      if (!isNaN(numericId)) {
-        const appId = structIdToAppId.get(numericId);
-        if (appId) {
-          sectionItems.push({
-            taskId: appId,
-            ...(typeof it.note === 'string' && it.note ? { note: it.note } : {}),
-          });
-          imported++;
-          continue;
-        }
-      }
-
-      const rawCustomItem =
-        typeof it.customItem === 'object' && it.customItem !== null
-          ? (it.customItem as Record<string, unknown>)
-          : null;
-      const pluginLabel =
-        rawCustomItem && typeof rawCustomItem.label === 'string'
-          ? rawCustomItem.label.trim()
-          : '';
-      const pluginDescription =
-        rawCustomItem && typeof rawCustomItem.description === 'string'
-          ? rawCustomItem.description.trim()
-          : '';
-      
-      // Look for note or notes
-      const noteVal = typeof it.note === 'string' ? it.note : (typeof it.notes === 'string' ? it.notes : '');
-      const rawNote = noteVal.trim();
-
-      if (pluginLabel) {
-        const stableId =
-          rawCustomItem && typeof rawCustomItem.id === 'string' && rawCustomItem.id
-            ? rawCustomItem.id
-            : crypto.randomUUID();
-
-        // Strict 1:1 mapping
-        // 1. label -> Name
-        // 2. description -> Task
-        // 3. notes/note -> Requirements
-        
-        sectionItems.push({
-          taskId: stableId,
-          isCustom: true,
-          customName: pluginLabel,
-          customDescription: pluginDescription,
-          ...(rawNote ? { note: rawNote } : {}),
-        });
-        customCount++;
-        imported++;
-        continue;
-      }
-
-      const legacyName = typeof it.name === 'string' ? it.name.trim() : '';
-      if (legacyName) {
-        sectionItems.push({
-          taskId: crypto.randomUUID(),
-          isCustom: true,
-          customName: legacyName,
-          customDescription: legacyName,
-          ...(typeof it.note === 'string' && it.note ? { note: it.note } : {}),
-        });
-        customCount++;
-        imported++;
-        continue;
-      }
-
-      unmapped++;
-    }
-
-    parsedSections.push({
-      id: crypto.randomUUID(),
-      name: sectionName,
-      description: '',
-      items: sectionItems,
-    });
-  }
-
-  const newRoute: Route = {
-    id: typeof obj.id === 'string' ? obj.id : crypto.randomUUID(),
-    name: (obj.name as string).trim(),
-    taskType:
-      typeof obj.taskType === 'string' ? obj.taskType : CURRENT_LEAGUE.pluginTaskType,
-    author: typeof obj.author === 'string' ? obj.author : '',
-    description: typeof obj.description === 'string' ? obj.description : '',
-    completed: false,
-    sections:
-      parsedSections.length > 0
-        ? parsedSections
-        : [{ id: crypto.randomUUID(), name: 'Main', description: '', items: [] }],
-  };
-
-  return { ok: true, route: newRoute, imported, customCount, unmapped };
-}
 
 // ─── Scroll offset helper ─────────────────────────────────────────────────────
 
@@ -320,6 +119,22 @@ function XIcon() {
   );
 }
 
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 12 16" fill="currentColor" className="w-3 h-4" aria-hidden="true">
+      <path d="M6 0C3.239 0 1 2.239 1 5c0 3.75 5 11 5 11S11 8.75 11 5c0-2.761-2.239-5-5-5zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4z" />
+    </svg>
+  );
+}
+
+function MapIcon() {
+  return (
+    <svg viewBox="0 0 14 14" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+      <path d="M0 1.75v10.5l4.5-1.5 4.5 1.5 4.5-1.5V.25L9 1.75 4.5.25 0 1.75zm4 7.5V2.1l5 1.667v7.133L4 9.25z" />
+    </svg>
+  );
+}
+
 function GripIcon() {
   return (
     <svg viewBox="0 0 10 16" fill="currentColor" className="w-2.5 h-4" aria-hidden="true">
@@ -361,10 +176,13 @@ interface SortableRowProps {
   task: TaskView;
   listPos: number;
   isRunMode: boolean;
+  mapVisible?: boolean;
+  onFocusOnMap?: (routeItemId: string) => void;
   onRemove: (taskId: string) => void;
+  isMapFocused?: boolean;
 }
 
-function SortableRow({ item, task, listPos, isRunMode, onRemove }: SortableRowProps) {
+function SortableRow({ item, task, listPos, isRunMode, onRemove, mapVisible, onFocusOnMap, isMapFocused }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -372,7 +190,7 @@ function SortableRow({ item, task, listPos, isRunMode, onRemove }: SortableRowPr
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.taskId });
+  } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -391,7 +209,11 @@ function SortableRow({ item, task, listPos, isRunMode, onRemove }: SortableRowPr
   return (
     <tr
       ref={setNodeRef}
-      style={style}
+      data-route-item-id={item.routeItemId}
+      style={{
+        ...style,
+        boxShadow: isMapFocused ? 'inset 3px 0 0 #8b6914' : undefined,
+      }}
       className={[
         completionClass, 
         stripeClass, 
@@ -499,17 +321,30 @@ function SortableRow({ item, task, listPos, isRunMode, onRemove }: SortableRowPr
       </td>
 
       <td className="p-0 align-middle text-center w-16">
-        {!isRunMode && (
-          <button
-            onClick={() => onRemove(item.taskId)}
-            onPointerDown={(e) => e.stopPropagation()}
-            title={`Remove "${task.name}" from route`}
-            aria-label={`Remove "${task.name}" from route`}
-            className="flex items-center justify-center w-full h-full py-2 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
-          >
-            <XIcon />
-          </button>
-        )}
+        <div className="flex items-center justify-center gap-0.5 px-1 py-1.5">
+          {mapVisible && item.location && onFocusOnMap && (
+            <button
+              onClick={() => onFocusOnMap(item.routeItemId)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Focus on map"
+              aria-label={`Focus "${task.name}" on map`}
+              className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors cursor-pointer"
+            >
+              <MapPinIcon />
+            </button>
+          )}
+          {!isRunMode && (
+            <button
+              onClick={() => onRemove(item.taskId)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={`Remove "${task.name}" from route`}
+              aria-label={`Remove "${task.name}" from route`}
+              className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+            >
+              <XIcon />
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -523,9 +358,12 @@ interface SortableCustomRowProps {
   isRunMode: boolean;
   onRemove: (taskId: string) => void;
   onEdit: (taskId: string, field: 'label' | 'description' | 'note', value: string) => void;
+  mapVisible?: boolean;
+  onFocusOnMap?: (routeItemId: string) => void;
+  isMapFocused?: boolean;
 }
 
-function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: SortableCustomRowProps) {
+function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit, mapVisible, onFocusOnMap, isMapFocused }: SortableCustomRowProps) {
   const [editingField, setEditingField] = useState<'label' | 'description' | 'note' | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -537,7 +375,7 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.taskId });
+  } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -585,7 +423,11 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
   return (
     <tr
       ref={setNodeRef}
-      style={style}
+      data-route-item-id={item.routeItemId}
+      style={{
+        ...style,
+        boxShadow: isMapFocused ? 'inset 3px 0 0 #8b6914' : undefined,
+      }}
       className={[
         stripeClass,
         editingField || isRunMode ? '' : 'cursor-grab active:cursor-grabbing'
@@ -782,8 +624,19 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
 
       {/* Actions */}
       <td className="p-0 align-middle text-center w-16">
-        {!isRunMode && (
-          <div className="flex items-center justify-center px-1 py-1.5">
+        <div className="flex items-center justify-center gap-0.5 px-1 py-1.5">
+          {mapVisible && item.location && onFocusOnMap && (
+            <button
+              onClick={() => onFocusOnMap(item.routeItemId)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title="Focus on map"
+              aria-label={`Focus "${displayName}" on map`}
+              className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors cursor-pointer"
+            >
+              <MapPinIcon />
+            </button>
+          )}
+          {!isRunMode && (
             <button
               onClick={() => onRemove(item.taskId)}
               onPointerDown={(e) => e.stopPropagation()}
@@ -793,8 +646,8 @@ function SortableCustomRow({ item, listPos, isRunMode, onRemove, onEdit }: Sorta
             >
               <XIcon />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -1022,6 +875,9 @@ interface TableSectionProps {
   setAddingCustomToSection: (id: string | null) => void;
   onAddCustomConfirm: (sectionId: string, name: string) => void;
   isDraggingSection: boolean;
+  mapVisible?: boolean;
+  onFocusOnMap?: (routeItemId: string) => void;
+  focusedItemId?: string | null;
 }
 
 function TableSection({
@@ -1037,6 +893,9 @@ function TableSection({
   setAddingCustomToSection,
   onAddCustomConfirm,
   isDraggingSection,
+  mapVisible,
+  onFocusOnMap,
+  focusedItemId,
 }: TableSectionProps) {
   return (
     <>
@@ -1050,8 +909,9 @@ function TableSection({
       />
 
       {!isDraggingSection && section.items.map((item) => {
-        if (!itemIndexMap.has(item.taskId)) return null;
-        const listPos = itemIndexMap.get(item.taskId)!;
+        if (!itemIndexMap.has(item.routeItemId)) return null;
+        const listPos = itemIndexMap.get(item.routeItemId)!;
+        const isMapFocused = focusedItemId === item.routeItemId;
         if (item.isCustom) {
           return (
             <SortableCustomRow
@@ -1061,6 +921,9 @@ function TableSection({
               isRunMode={isRunMode}
               onRemove={onRemoveTask}
               onEdit={onEditCustomTask}
+              mapVisible={mapVisible}
+              onFocusOnMap={onFocusOnMap}
+              isMapFocused={isMapFocused}
             />
           );
         }
@@ -1074,6 +937,9 @@ function TableSection({
             listPos={listPos}
             isRunMode={isRunMode}
             onRemove={onRemoveTask}
+            mapVisible={mapVisible}
+            onFocusOnMap={onFocusOnMap}
+            isMapFocused={isMapFocused}
           />
         );
       })}
@@ -1157,8 +1023,8 @@ function SortableSectionChip({ section, isBeingDragged, isRunMode, onJump }: Sor
 
 // ─── Mobile route card (real task) ────────────────────────────────────────────
 
-function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: SortableRowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.taskId });
+function SortableRouteCard({ item, task, listPos, isRunMode, onRemove, mapVisible, onFocusOnMap, isMapFocused }: SortableRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -1166,6 +1032,7 @@ function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: Sortabl
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
+    boxShadow: isMapFocused ? 'inset 3px 0 0 #8b6914' : undefined,
   };
 
   const reqIsNa = isNaReqs(task.requirementsText);
@@ -1179,6 +1046,7 @@ function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: Sortabl
   return (
     <div
       ref={setNodeRef}
+      data-route-item-id={item.routeItemId}
       style={style}
       {...attributes}
       className={`flex flex-col border rounded-sm shadow-sm overflow-hidden transition-colors ${cardBg}`}
@@ -1259,6 +1127,18 @@ function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: Sortabl
       )}
 
       {/* Remove action (edit mode only) */}
+      {(mapVisible && item.location && onFocusOnMap) && (
+        <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
+          <button
+            onClick={() => onFocusOnMap(item.routeItemId)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-full py-2 text-[12px] font-medium text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors touch-manipulation flex items-center justify-center gap-1.5"
+          >
+            <MapPinIcon />
+            View on map
+          </button>
+        </div>
+      )}
       {!isRunMode && (
         <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
           <button
@@ -1276,12 +1156,12 @@ function SortableRouteCard({ item, task, listPos, isRunMode, onRemove }: Sortabl
 
 // ─── Mobile custom task card ───────────────────────────────────────────────────
 
-function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit }: SortableCustomRowProps) {
+function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit, mapVisible, onFocusOnMap, isMapFocused }: SortableCustomRowProps) {
   const [editingField, setEditingField] = useState<'label' | 'description' | 'note' | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.taskId });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -1289,6 +1169,7 @@ function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit }: Sort
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
+    boxShadow: isMapFocused ? 'inset 3px 0 0 #8b6914' : undefined,
   };
 
   useEffect(() => {
@@ -1326,6 +1207,7 @@ function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit }: Sort
   return (
     <div
       ref={setNodeRef}
+      data-route-item-id={item.routeItemId}
       style={style}
       {...attributes}
       className="flex flex-col border rounded-sm shadow-sm overflow-hidden bg-wiki-surface dark:bg-wiki-surface-dark border-wiki-border dark:border-wiki-border-dark"
@@ -1427,6 +1309,19 @@ function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit }: Sort
         )}
       </div>
 
+      {/* Map focus action */}
+      {(mapVisible && item.location && onFocusOnMap) && (
+        <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
+          <button
+            onClick={() => onFocusOnMap(item.routeItemId)}
+            onPointerDown={(e) => e.stopPropagation()}
+            className="w-full py-2 text-[12px] font-medium text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors touch-manipulation flex items-center justify-center gap-1.5"
+          >
+            <MapPinIcon />
+            View on map
+          </button>
+        </div>
+      )}
       {/* Remove action */}
       {!isRunMode && (
         <div className="border-t border-wiki-border dark:border-wiki-border-dark/50">
@@ -1490,6 +1385,9 @@ interface MobileRouteSectionProps {
   setAddingCustomToSection: (id: string | null) => void;
   onAddCustomConfirm: (sectionId: string, name: string) => void;
   isDraggingSection: boolean;
+  mapVisible?: boolean;
+  onFocusOnMap?: (routeItemId: string) => void;
+  focusedItemId?: string | null;
 }
 
 function MobileRouteSection({
@@ -1505,6 +1403,9 @@ function MobileRouteSection({
   setAddingCustomToSection,
   onAddCustomConfirm,
   isDraggingSection,
+  mapVisible,
+  onFocusOnMap,
+  focusedItemId,
 }: MobileRouteSectionProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(section.name);
@@ -1610,8 +1511,9 @@ function MobileRouteSection({
 
       {/* Task cards */}
       {!isDraggingSection && section.items.map((item) => {
-        if (!itemIndexMap.has(item.taskId)) return null;
-        const listPos = itemIndexMap.get(item.taskId)!;
+        if (!itemIndexMap.has(item.routeItemId)) return null;
+        const listPos = itemIndexMap.get(item.routeItemId)!;
+        const isMapFocused = focusedItemId === item.routeItemId;
         return (
           <div key={item.taskId} className="mb-2">
             {item.isCustom ? (
@@ -1621,6 +1523,9 @@ function MobileRouteSection({
                 isRunMode={isRunMode}
                 onRemove={onRemoveTask}
                 onEdit={onEditCustomTask}
+                mapVisible={mapVisible}
+                onFocusOnMap={onFocusOnMap}
+                isMapFocused={isMapFocused}
               />
             ) : (() => {
               const task = taskMap.get(item.taskId);
@@ -1632,6 +1537,9 @@ function MobileRouteSection({
                   listPos={listPos}
                   isRunMode={isRunMode}
                   onRemove={onRemoveTask}
+                  mapVisible={mapVisible}
+                  onFocusOnMap={onFocusOnMap}
+                  isMapFocused={isMapFocused}
                 />
               );
             })()}
@@ -1658,6 +1566,9 @@ function MobileRouteSection({
     </div>
   );
 }
+
+
+
 
 // ─── Main panel ────────────────────────────────────────────────────────────────
 
@@ -1697,7 +1608,7 @@ export function RoutePlannerPanel({
         const listPos = globalIndex++;
 
         if (!filters.applyFilterToRoute) {
-          map.set(item.taskId, listPos);
+          map.set(item.routeItemId, listPos);
           continue;
         }
 
@@ -1725,7 +1636,7 @@ export function RoutePlannerPanel({
         }
         
         if (matches) {
-          map.set(item.taskId, listPos);
+          map.set(item.routeItemId, listPos);
         }
       }
     }
@@ -1743,6 +1654,105 @@ export function RoutePlannerPanel({
       }, 0),
     [allRouteItems, taskMap],
   );
+
+  // ── Map state ──────────────────────────────────────────────────────────────
+  const [mapVisible, setMapVisible]             = useState(false);
+  const [mapFocusedItemId, setMapFocusedItemId] = useState<string | null>(null);
+  /** Controlled height for the map area (desktop only). Min 200, max 700. */
+  const [mapHeight, setMapHeight]               = useState(440);
+  /** Controlled width for the right-side route list (desktop only). Min 180, max 520. */
+  const [listWidth, setListWidth]               = useState(340);
+  /** Resize drag state — not stored in state to avoid re-render on every move. */
+  const resizeDragRef     = useRef<{ startY: number; startH: number } | null>(null);
+  const listResizeDragRef = useRef<{ startX: number; startW: number } | null>(null);
+
+  const handleResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeDragRef.current = { startY: e.clientY, startH: mapHeight };
+  }, [mapHeight]);
+
+  const handleResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeDragRef.current) return;
+    const delta = e.clientY - resizeDragRef.current.startY;
+    const newH  = Math.max(200, Math.min(700, resizeDragRef.current.startH + delta));
+    setMapHeight(newH);
+  }, []);
+
+  const handleResizePointerUp = useCallback(() => {
+    resizeDragRef.current = null;
+  }, []);
+
+  /** Horizontal resize: drag handle between map and route list. Drag left = wider list. */
+  const handleListResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    listResizeDragRef.current = { startX: e.clientX, startW: listWidth };
+  }, [listWidth]);
+
+  const handleListResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!listResizeDragRef.current) return;
+    // Drag left (negative delta from startX) widens the right panel.
+    const delta = listResizeDragRef.current.startX - e.clientX;
+    const newW  = Math.max(180, Math.min(520, listResizeDragRef.current.startW + delta));
+    setListWidth(newW);
+  }, []);
+
+  const handleListResizePointerUp = useCallback(() => {
+    listResizeDragRef.current = null;
+  }, []);
+
+  /** Derive marker view-models from route items that have an explicit location. */
+  const mapMarkers = useMemo((): MarkerViewModel[] => {
+    const result: MarkerViewModel[] = [];
+    for (const section of route.sections) {
+      for (const item of section.items) {
+        if (!item.location) continue;
+        const listPos = itemIndexMap.get(item.routeItemId);
+        if (listPos === undefined) continue; // filtered out
+        
+        const task = item.isCustom ? undefined : taskMap.get(item.taskId);
+        const label = item.isCustom
+          ? (item.customName ?? 'Custom')
+          : (task?.name ?? 'Task');
+        const isCompleted = !item.isCustom && (task?.completed ?? false);
+        
+        result.push({
+          routeItemId: item.routeItemId,
+          listPos: listPos + 1,
+          label,
+          location: item.location,
+          isCustom: item.isCustom ?? false,
+          isCompleted,
+          description: task?.description ?? item.customDescription,
+          notes: item.note,
+          requirements: task?.requirementsText,
+        });
+      }
+    }
+    return result;
+  }, [route.sections, itemIndexMap, taskMap]);
+
+  /**
+   * Called when a map marker is clicked.
+   * Sets the shared focused item — the map list and main planner highlight will
+   * update via props/state. Does NOT scroll the page to the big planner.
+   */
+  const handleMarkerClick = useCallback((routeItemId: string) => {
+    setMapFocusedItemId(routeItemId);
+  }, []);
+
+  /**
+   * Called when the user clicks a row in the compact map-side route list.
+   * Same effect as a marker click — sets focus, map panel flies to the marker.
+   */
+  const handleSelectMapItem = useCallback((routeItemId: string) => {
+    setMapFocusedItemId(routeItemId);
+  }, []);
+
+  /** Called when a list row's map-pin button is clicked — pans map to that marker. */
+  const handleFocusOnMap = useCallback((routeItemId: string) => {
+    setMapFocusedItemId(routeItemId);
+    // RouteMapPanel's flyTo effect handles the pan automatically.
+  }, []);
 
   // ── Export state ───────────────────────────────────────────────────────────
   const [exportStatus, setExportStatus] = useState<'idle' | 'copied'>('idle');
@@ -1765,7 +1775,7 @@ export function RoutePlannerPanel({
       return;
     }
     setExportError(null);
-    const payload = buildExportPayload(route, allTasks);
+    const payload = buildPluginExportPayload(route, allTasks);
     const json = JSON.stringify(payload, null, 2);
 
     try {
@@ -1966,8 +1976,8 @@ export function RoutePlannerPanel({
       if (isRunMode) return;
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const oldIndex = allRouteItems.findIndex((i) => i.taskId === active.id);
-      const newIndex = allRouteItems.findIndex((i) => i.taskId === over.id);
+      const oldIndex = allRouteItems.findIndex((i) => i.routeItemId === active.id);
+      const newIndex = allRouteItems.findIndex((i) => i.routeItemId === over.id);
       if (oldIndex !== -1 && newIndex !== -1) onReorderItems(oldIndex, newIndex);
     },
     [allRouteItems, onReorderItems, isRunMode],
@@ -2070,6 +2080,26 @@ export function RoutePlannerPanel({
               {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {totalPoints} pts
             </span>
           )}
+
+          {/* Map toggle */}
+          <button
+            onClick={() => setMapVisible((v) => !v)}
+            title={mapVisible ? 'Hide route map' : 'Show route map'}
+            className={[
+              'flex items-center gap-1 px-2.5 py-1 text-[12px] font-medium border transition-colors flex-shrink-0',
+              mapVisible
+                ? 'bg-wiki-link dark:bg-wiki-link-dark text-white border-transparent'
+                : 'border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark',
+            ].join(' ')}
+          >
+            <MapIcon />
+            Map
+            {mapMarkers.length > 0 && (
+              <span className={`text-[10px] font-normal ${mapVisible ? 'opacity-80' : 'opacity-60'}`}>
+                ({mapMarkers.length})
+              </span>
+            )}
+          </button>
 
           {/* Utility cluster: Import + Export + Share grouped so they wrap as one unit on mobile */}
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -2505,6 +2535,68 @@ export function RoutePlannerPanel({
         </div>
       </div>
 
+      {/* ── Route map (collapsible) ────────────────────────────────────────── */}
+      {mapVisible && (
+        <div className="border-t border-wiki-border dark:border-wiki-border-dark">
+          {/* Map + right route-list row */}
+          <div
+            className="flex flex-row"
+            style={{ height: mapHeight }}
+          >
+            {/* Left: Leaflet map fills remaining width */}
+            <div className="flex-1 min-w-0 relative">
+              <RouteMapPanel
+                markers={mapMarkers}
+                focusedItemId={mapFocusedItemId}
+                onMarkerClick={handleMarkerClick}
+                containerHeight={mapHeight}
+              />
+            </div>
+
+            {/* Horizontal resize handle — desktop only */}
+            <div
+              className="hidden sm:flex w-2 cursor-ew-resize items-center justify-center bg-wiki-surface dark:bg-wiki-surface-dark border-l border-r border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors select-none touch-none flex-shrink-0 group"
+              role="separator"
+              aria-label="Drag to resize route list"
+              onPointerDown={handleListResizePointerDown}
+              onPointerMove={handleListResizePointerMove}
+              onPointerUp={handleListResizePointerUp}
+              onPointerCancel={handleListResizePointerUp}
+            >
+              <div className="w-0.5 h-8 rounded-full bg-wiki-border dark:bg-wiki-border-dark group-hover:bg-wiki-muted dark:group-hover:bg-wiki-muted-dark transition-colors" />
+            </div>
+
+            {/* Right: compact route list — desktop only, width controlled by drag */}
+            <div
+              className="hidden sm:flex flex-col bg-wiki-surface dark:bg-wiki-surface-dark overflow-hidden flex-shrink-0"
+              style={{ width: listWidth }}
+            >
+              <MapRouteList
+                sections={route.sections}
+                taskMap={taskMap}
+                itemIndexMap={itemIndexMap}
+                markers={mapMarkers}
+                focusedItemId={mapFocusedItemId}
+                onSelectItem={handleSelectMapItem}
+              />
+            </div>
+          </div>
+
+          {/* Vertical resize handle — desktop only */}
+          <div
+            className="hidden sm:flex h-2 cursor-ns-resize items-center justify-center border-t border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors select-none touch-none group"
+            role="separator"
+            aria-label="Drag to resize map"
+            onPointerDown={handleResizePointerDown}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            onPointerCancel={handleResizePointerUp}
+          >
+            <div className="w-10 h-0.5 rounded-full bg-wiki-border dark:bg-wiki-border-dark group-hover:bg-wiki-muted dark:group-hover:bg-wiki-muted-dark transition-colors" />
+          </div>
+        </div>
+      )}
+
       {/* ── Validation / status banners ──────────────────────────────────── */}
       {/* ── Empty state ──────────────────────────────────────────────────── */}
       {itemCount === 0 && route.sections.length <= 1 && (
@@ -2554,6 +2646,9 @@ export function RoutePlannerPanel({
                     setAddingCustomToSection={setAddingCustomToSection}
                     onAddCustomConfirm={handleAddCustomConfirm}
                     isDraggingSection={isDraggingSection}
+                    mapVisible={mapVisible}
+                    onFocusOnMap={handleFocusOnMap}
+                    focusedItemId={mapFocusedItemId}
                   />
                 ))}
               </SortableContext>
@@ -2600,6 +2695,9 @@ export function RoutePlannerPanel({
                         setAddingCustomToSection={setAddingCustomToSection}
                         onAddCustomConfirm={handleAddCustomConfirm}
                         isDraggingSection={isDraggingSection}
+                        mapVisible={mapVisible}
+                        onFocusOnMap={handleFocusOnMap}
+                        focusedItemId={mapFocusedItemId}
                       />
                     ))}
                   </tbody>

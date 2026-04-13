@@ -1,0 +1,396 @@
+/**
+ * RouteMapPanel — read-only Leaflet map for the Route Planner.
+ *
+ * Displays markers at explicit RouteItem locations, supports plane selection,
+ * fit-to-route, and bidirectional list↔marker sync via focusedItemId.
+ *
+ * Design:
+ *   - Desktop: 380px fixed height, collapsible via parent toggle
+ *   - Mobile:  280px fixed height, shown only when parent opts in
+ *   - Tile source: Explv's OSRS map tiles (GitHub raw, TMS format)
+ *   - Coordinate system: Explv's OSRS → EPSG:3857 pixel projection
+ *
+ * Implementation note:
+ *   Uses plain Leaflet (not react-leaflet's MapContainer) to avoid a
+ *   react-leaflet v5 bug where React 18 StrictMode's cleanup/remount cycle
+ *   leaves mapInstanceRef.current pointing at an already-removed map, so the
+ *   guard `!mapInstanceRef.current` prevents re-initialisation and the panel
+ *   renders blank forever. Managing the L.Map instance via useState makes it
+ *   a proper reactive dependency: when cleanup sets it to null, all dependent
+ *   effects no-op, and when the init effect creates a fresh map the tile and
+ *   marker effects automatically re-run.
+ */
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import L from 'leaflet';
+import type { RouteLocation } from '@/types/route';
+import {
+  osrsToLatLng,
+  osrsTileUrl,
+  DEFAULT_CENTER,
+  DEFAULT_ZOOM,
+  OSRS_MAX_ZOOM,
+  OSRS_MIN_ZOOM,
+} from './map/osrsCoords';
+
+// ─── View model ───────────────────────────────────────────────────────────────
+
+/** Derived per-marker data shape passed into the map panel. */
+export interface MarkerViewModel {
+  routeItemId: string;
+  /** 1-indexed position in the route list — rendered on the pin. */
+  listPos: number;
+  /** Display label (task name or custom item label). */
+  label: string;
+  location: RouteLocation;
+  isCustom: boolean;
+  isCompleted: boolean;
+  /** Optional longer description for the task. */
+  description?: string;
+  /** Optional user notes for this specific route item. */
+  notes?: string;
+  /** Optional requirements string (e.g. from task definitions). */
+  requirements?: string;
+}
+
+// ─── Marker icon factory ──────────────────────────────────────────────────────
+
+function makeMarkerIcon(
+  listPos: number,
+  isSelected: boolean,
+  isCompleted: boolean,
+  isCustom: boolean,
+): L.DivIcon {
+  const fill   = isSelected  ? '#0052cc'  // wiki-style blue for selected
+               : isCompleted ? '#3d7a3d'
+               :               '#e82424'; // wiki-style red (ignore isCustom so map pins matched tracker layout color)
+  const stroke = isSelected  ? '#003a99'
+               : isCompleted ? '#1a4a1a'
+               :               '#8b1a1a';
+  const n     = String(listPos).slice(0, 3);
+  const fsize = n.length > 2 ? 7 : 8;
+
+  // Selected markers are slightly larger to stand out clearly.
+  const w = isSelected ? 28 : 24;
+  const h = isSelected ? 35 : 30;
+  const cx = w / 2;
+
+  const html = [
+    `<svg width="${w}" height="${h}" viewBox="0 0 24 30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45))">`,
+    `<path d="M12 1C6.477 1 2 5.477 2 11c0 4.75 4.5 10.5 10 18C18 21.5 22 15.75 22 11 22 5.477 17.523 1 12 1z"`,
+    `      fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`,
+    `<circle cx="12" cy="11" r="4.5" fill="white" opacity="0.35"/>`,
+    `<text x="12" y="12" font-family="monospace,sans-serif" font-size="${fsize}" fill="white"`,
+    `      text-anchor="middle" dominant-baseline="middle" font-weight="bold">${n}</text>`,
+    `</svg>`,
+  ].join('');
+
+  return L.divIcon({
+    className:    '',
+    html,
+    iconSize:     [w, h],
+    iconAnchor:   [cx, h],
+    tooltipAnchor: [0, -h],
+  });
+}
+
+// ─── Tooltip HTML builder ────────────────────────────────────────────────────
+
+function escapeHtml(unsafe: string) {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function markerTooltipHtml(marker: MarkerViewModel): string {
+  const badge =
+    marker.isCompleted
+      ? '<div style="font-size:10px;margin-top:2px;opacity:0.7">✓ Completed</div>'
+      : marker.isCustom
+      ? '<div style="font-size:10px;margin-top:2px;opacity:0.7">Custom task</div>'
+      : '';
+      
+  let extraInfo = '';
+  if (marker.description) {
+    extraInfo += `<div style="font-size:11px;margin-top:4px;opacity:0.85"><span style="opacity:0.6">Desc:</span> ${escapeHtml(marker.description)}</div>`;
+  }
+  if (marker.requirements) {
+    extraInfo += `<div style="font-size:11px;margin-top:2px;opacity:0.85"><span style="opacity:0.6">Reqs:</span> ${escapeHtml(marker.requirements)}</div>`;
+  }
+  if (marker.notes) {
+    extraInfo += `<div style="font-size:11px;margin-top:2px;opacity:0.85;font-style:italic"><span style="opacity:0.6">Notes:</span> ${escapeHtml(marker.notes)}</div>`;
+  }
+
+  return (
+    `<div style="font-size:12px;line-height:1.4">` +
+    `<div><span style="font-weight:700">${marker.listPos}.</span> ` +
+    `<span style="font-weight:600">${escapeHtml(marker.label)}</span></div>` +
+    badge +
+    extraInfo +
+    `</div>`
+  );
+}
+
+// ─── Panel props ──────────────────────────────────────────────────────────────
+
+export interface RouteMapPanelProps {
+  /** All markers across all planes, derived from the current route. */
+  markers:       MarkerViewModel[];
+  /** routeItemId of the list item currently focused (drives map flyTo). */
+  focusedItemId: string | null;
+  /** Called when the user clicks a map marker (drives list scroll). */
+  onMarkerClick: (routeItemId: string) => void;
+  /**
+   * Parent-controlled container height in px. When this changes the panel
+   * calls map.invalidateSize() so Leaflet re-measures its container.
+   */
+  containerHeight?: number;
+}
+
+// ─── Main panel ───────────────────────────────────────────────────────────────
+
+export function RouteMapPanel({ markers, focusedItemId, onMarkerClick, containerHeight }: RouteMapPanelProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The Leaflet map instance lives in state (not a ref) so that tile-layer and
+   * marker effects can list it as a dependency.  When StrictMode's simulated
+   * unmount runs the init-effect cleanup (`map.remove(); setMap(null)`), those
+   * effects see map=null and skip.  When StrictMode's simulated remount runs
+   * the init-effect setup again, a fresh map is created and state updates to
+   * the new instance → the dependent effects re-run and the map fully renders.
+   */
+  const [map, setMap] = useState<L.Map | null>(null);
+
+  const [plane, setPlane]           = useState(0);
+  const [fitTrigger, setFitTrigger] = useState(0);
+
+  // Which planes have markers (for plane selector UX)
+  const planesWithMarkers = useMemo(
+    () => new Set(markers.map((m) => m.location.plane)),
+    [markers],
+  );
+
+  // Markers visible on the current plane
+  const planeMarkers = useMemo(
+    () => markers.filter((m) => m.location.plane === plane),
+    [markers, plane],
+  );
+
+  const hasAnyMarkers = markers.length > 0;
+
+  // ── Init / teardown Leaflet map ─────────────────────────────────────────────
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const m = L.map(container, {
+      center:           DEFAULT_CENTER,
+      zoom:             DEFAULT_ZOOM,
+      maxZoom:          OSRS_MAX_ZOOM,
+      minZoom:          2,
+      zoomControl:      false,
+      attributionControl: false,
+    });
+
+    setMap(m);
+
+    // Ensure the map measures its container correctly after the browser paints.
+    // This handles any edge cases where the CSS layout resolves after mount.
+    const rafId = requestAnimationFrame(() => m.invalidateSize());
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      m.remove();
+      setMap(null);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Resize invalidation (re-measure when parent changes our height) ─────────
+  useEffect(() => {
+    if (!map || containerHeight === undefined) return;
+    // Use rAF so the browser has applied the new CSS size before we measure.
+    const raf = requestAnimationFrame(() => map.invalidateSize());
+    return () => cancelAnimationFrame(raf);
+  }, [map, containerHeight]);
+
+  // ── Tile layer (re-applied when map instance or plane changes) ──────────────
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Remove old tile layer before adding the new one.
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+      tileLayerRef.current = null;
+    }
+
+    const layer = L.tileLayer(osrsTileUrl(plane), {
+      tms:     true,
+      minZoom: OSRS_MIN_ZOOM,
+      maxZoom: OSRS_MAX_ZOOM,
+      noWrap:  true,
+    });
+    layer.addTo(map);
+    tileLayerRef.current = layer;
+  }, [map, plane]);
+
+  // ── Markers (re-applied when map, visible markers, or selection changes) ────
+  const leafletMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+
+  // onMarkerClick is a stable callback from the parent; wrap in useCallback to
+  // keep the effect dependency stable across renders.
+  const stableOnMarkerClick = useCallback(
+    (id: string) => onMarkerClick(id),
+    [onMarkerClick],
+  );
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Remove previous markers.
+    leafletMarkersRef.current.forEach((lm) => map.removeLayer(lm));
+    leafletMarkersRef.current.clear();
+
+    // Add markers for the current plane.
+    planeMarkers.forEach((m) => {
+      const pos  = osrsToLatLng(map, m.location.x, m.location.y);
+      const icon = makeMarkerIcon(
+        m.listPos,
+        m.routeItemId === focusedItemId,
+        m.isCompleted,
+        m.isCustom,
+      );
+      const marker = L.marker(pos, {
+        icon,
+        zIndexOffset: m.routeItemId === focusedItemId ? 1000 : 0,
+      });
+      // Tooltip shown on hover — click is reserved for selection.
+      marker.bindTooltip(markerTooltipHtml(m), {
+        direction:  'top',
+        permanent:  false,
+        opacity:    0.95,
+        className:  'osrs-map-tooltip',
+      });
+      marker.on('click', () => stableOnMarkerClick(m.routeItemId));
+      marker.addTo(map);
+      leafletMarkersRef.current.set(m.routeItemId, marker);
+    });
+  }, [map, planeMarkers, focusedItemId, stableOnMarkerClick]);
+
+  // ── Fly to focused marker (auto-switch plane when needed) ───────────────────
+  const allMarkersRef = useRef(markers);
+  allMarkersRef.current = markers;
+
+  useEffect(() => {
+    if (!map || !focusedItemId) return;
+
+    const target = allMarkersRef.current.find((x) => x.routeItemId === focusedItemId);
+    if (!target) return;
+
+    // Auto-switch plane if the focused item is on a different plane.
+    setPlane(target.location.plane);
+
+    const pos = osrsToLatLng(map, target.location.x, target.location.y);
+    map.flyTo(pos, Math.max(map.getZoom(), 8), { duration: 0.7 });
+  }, [map, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fit view to current-plane markers ──────────────────────────────────────
+  const planeMarkersRef = useRef(planeMarkers);
+  planeMarkersRef.current = planeMarkers;
+
+  useEffect(() => {
+    if (!map || fitTrigger === 0) return;
+
+    const pm = planeMarkersRef.current;
+    if (pm.length === 0) return;
+
+    if (pm.length === 1) {
+      const pos = osrsToLatLng(map, pm[0].location.x, pm[0].location.y);
+      map.flyTo(pos, 9, { duration: 0.7 });
+      return;
+    }
+
+    const latlngs = pm.map((m) => osrsToLatLng(map, m.location.x, m.location.y));
+    map.fitBounds(L.latLngBounds(latlngs), { padding: [50, 50], maxZoom: 9 });
+  }, [map, fitTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div
+      className="relative h-full"
+      aria-label="Route map"
+    >
+      {/* Leaflet map mounts here — explicit pixel height so Leaflet reads correct size */}
+      <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
+
+      {/* ── Overlay: plane selector (bottom-left) ──────────────────────────── */}
+      <div className="absolute bottom-2 left-2 z-[1000] flex flex-col gap-0.5 pointer-events-auto">
+        {[0, 1, 2, 3].map((p) => {
+          const hasMarkers = planesWithMarkers.has(p);
+          const isActive   = plane === p;
+          const isDisabled = hasAnyMarkers && !hasMarkers;
+          return (
+            <button
+              key={p}
+              onClick={() => !isDisabled && setPlane(p)}
+              title={`Plane ${p}${hasMarkers ? ' · has markers' : ''}`}
+              aria-pressed={isActive}
+              aria-label={`Show plane ${p}`}
+              className={[
+                'w-7 h-7 text-[11px] font-bold border shadow-sm transition-colors leading-none',
+                isActive
+                  ? 'bg-wiki-link dark:bg-wiki-link-dark text-white border-transparent'
+                  : hasMarkers
+                  ? 'bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-link dark:text-wiki-link-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark cursor-pointer'
+                  : isDisabled
+                  ? 'bg-white/50 dark:bg-black/30 text-wiki-muted dark:text-wiki-muted-dark border-wiki-border/40 dark:border-wiki-border-dark/40 opacity-40 cursor-default'
+                  : 'bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-muted dark:text-wiki-muted-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark cursor-pointer',
+              ].join(' ')}
+            >
+              {p}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Overlay: fit + attribution (bottom-right) ──────────────────────── */}
+      <div className="absolute bottom-2 right-2 z-[1000] flex flex-col items-end gap-1 pointer-events-auto">
+        {hasAnyMarkers && (
+          <button
+            onClick={() => setFitTrigger((t) => t + 1)}
+            title="Fit view to markers on this plane"
+            className="px-2 py-1 text-[10px] font-semibold border shadow-sm bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-text dark:text-wiki-text-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors"
+          >
+            Fit
+          </button>
+        )}
+        <span className="text-[9px] text-wiki-muted/70 dark:text-wiki-muted-dark/70 bg-white/60 dark:bg-black/40 px-1 select-none pointer-events-none">
+          Tiles © Explv / Jagex
+        </span>
+      </div>
+
+      {/* ── Empty state: no markers at all ─────────────────────────────────── */}
+      {!hasAnyMarkers && (
+        <div className="absolute inset-0 flex items-end justify-center pb-4 z-[999] pointer-events-none">
+          <div className="bg-wiki-surface/90 dark:bg-wiki-surface-dark/90 border border-wiki-border dark:border-wiki-border-dark px-3 py-2 text-[11px] text-wiki-muted dark:text-wiki-muted-dark text-center max-w-xs leading-snug shadow-sm">
+            No route items have map coordinates.
+            <br />
+            Import a route from the RuneLite plugin to see pins.
+          </div>
+        </div>
+      )}
+
+      {/* ── Notice: markers exist but none on current plane ─────────────────── */}
+      {hasAnyMarkers && planeMarkers.length === 0 && (
+        <div className="absolute inset-0 flex items-end justify-center pb-4 z-[999] pointer-events-none">
+          <div className="bg-wiki-surface/90 dark:bg-wiki-surface-dark/90 border border-wiki-border dark:border-wiki-border-dark px-3 py-1.5 text-[11px] text-wiki-muted dark:text-wiki-muted-dark shadow-sm">
+            No markers on plane {plane}.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

@@ -301,3 +301,86 @@ html.scroll-lock, body.scroll-lock {
   overflow: hidden !important;
   overscroll-behavior: none !important;
 }
+
+/* ── Leaflet overrides (Route Planner map) ────────────────────────────── */
+
+/* Background shown when tiles haven't loaded or the view is near the map edge. */
+.leaflet-container {
+  background: #c0a886; /* wiki-bg warm tan */
+  font-family: inherit;
+}
+.dark .leaflet-container {
+  background: #071022; /* wiki-bg-dark deep navy */
+}
+
+/* Popup wrapper — wiki surface colours */
+.leaflet-popup-content-wrapper {
+  background: #d8ccb4;
+  border: 1px solid #94866d;
+  border-radius: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  padding: 0;
+}
+.dark .leaflet-popup-content-wrapper {
+  background: #222e45;
+  border-color: #596e96;
+}
+.leaflet-popup-content {
+  margin: 6px 10px;
+  color: #2c2208;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.dark .leaflet-popup-content {
+  color: #dde3ef;
+}
+.leaflet-popup-tip {
+  background: #d8ccb4;
+}
+.dark .leaflet-popup-tip {
+  background: #222e45;
+}
+/* Remove the default close button outline */
+.leaflet-popup-close-button {
+  color: #6b5e47 !important;
+}
+.dark .leaflet-popup-close-button {
+  color: #8a9dbf !important;
+}
+
+/* ── OSRS map marker tooltip ──────────────────────────────────────────── */
+/* Styled to match the wiki surface. Shown on marker hover (not click).  */
+.leaflet-tooltip.osrs-map-tooltip {
+  background: #d8ccb4;
+  border: 1px solid #94866d;
+  border-radius: 2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  color: #2c2208;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  white-space: normal;
+  min-width: 180px;
+  max-width: 280px;
+  pointer-events: none;
+}
+.dark .leaflet-tooltip.osrs-map-tooltip {
+  background: #222e45;
+  border-color: #596e96;
+  color: #dde3ef;
+}
+.leaflet-tooltip.osrs-map-tooltip::before {
+  border-top-color: #94866d;
+}
+.dark .leaflet-tooltip.osrs-map-tooltip::before {
+  border-top-color: #596e96;
+}
+
+/* ── Map-focused main planner row highlight ───────────────────────────── */
+/* Applied via DOM class when marker/map-list selection changes.          */
+[data-route-item-id].route-item-map-focused {
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+.dark [data-route-item-id].route-item-map-focused {
+  box-shadow: inset 3px 0 0 #60a5fa;
+}

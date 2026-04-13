@@ -52,6 +52,62 @@ interface SharePayloadV2 {
   s: ShareSection[];  // sections
 }
 
+// ─── Compact transport types (v3) ─────────────────────────────────────────────
+//
+// v3 extends v2 with two new item shapes:
+//
+//   { ti: number; nt?: string; loc: [x, y, plane] }
+//     Regular task that carries an explicit world-map location.
+//     Discriminated from custom items by the presence of the `ti` key.
+//
+//   Custom item gains two optional fields:
+//     ic?  — icon identifier sourced from the plugin's customItem.icon
+//     loc? — explicit world-map location [x, y, plane]
+//
+// All v2 item shapes (number, [number, string], { cn }) remain valid in v3
+// so a v3 decoder can also handle items that carry no location data.
+
+/** Compact world-map coordinate tuple: [x, y, plane]. */
+type LocTuple = [number, number, number];
+
+/**
+ * Regular task item with an explicit location.
+ * Discriminated from CustomShareItemV3 by the presence of the `ti` key.
+ */
+interface LocatedTaskShareItem {
+  ti: number;      // task sortId
+  nt?: string;     // note
+  loc: LocTuple;   // [x, y, plane]
+}
+
+/**
+ * Custom (non-game) task item in v3 format.
+ * Superset of the v2 CustomShareItem — adds optional `ic` and `loc`.
+ * Discriminated from LocatedTaskShareItem by the presence of the `cn` key.
+ */
+interface CustomShareItemV3 {
+  cn: string;       // customName
+  cd?: string;      // customDescription
+  nt?: string;      // note
+  ic?: string;      // customIcon (plugin icon identifier)
+  loc?: LocTuple;   // [x, y, plane]
+}
+
+type ShareItemV3 = number | [number, string] | LocatedTaskShareItem | CustomShareItemV3;
+
+interface ShareSectionV3 {
+  n: string;        // section name
+  d?: string;       // section description (omitted when empty)
+  i: ShareItemV3[]; // items
+}
+
+interface SharePayloadV3 {
+  v: 3;
+  n: string;           // route name
+  t?: string;          // taskType (omitted when "LEAGUE_5")
+  s: ShareSectionV3[]; // sections
+}
+
 // ─── Encoding helpers ─────────────────────────────────────────────────────────
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -179,18 +235,20 @@ async function decompressPayload(encoded: string): Promise<unknown> {
   }
 }
 
-// ─── v2 encoder ───────────────────────────────────────────────────────────────
+// ─── v2 encoder (retired) / v3 encoder ───────────────────────────────────────
 
-function buildCompactPayload(route: Route, tasks: TaskRef[]): SharePayloadV2 {
+function buildCompactPayload(route: Route, tasks: TaskRef[]): SharePayloadV3 {
   const taskIdToSortId = new Map<string, number>();
   for (const t of tasks) taskIdToSortId.set(t.id, t.sortId);
 
-  const sections: ShareSection[] = route.sections.map((section) => {
-    const items: ShareItem[] = section.items.flatMap((item): ShareItem[] => {
+  const sections: ShareSectionV3[] = route.sections.map((section) => {
+    const items: ShareItemV3[] = section.items.flatMap((item): ShareItemV3[] => {
       if (item.isCustom) {
-        const ci: CustomShareItem = { cn: (item.customName ?? '').slice(0, 200) };
+        const ci: CustomShareItemV3 = { cn: (item.customName ?? '').slice(0, 200) };
         if (item.customDescription) ci.cd = item.customDescription.slice(0, 400);
         if (item.note) ci.nt = item.note.slice(0, 400);
+        if (item.customIcon) ci.ic = item.customIcon.slice(0, 200);
+        if (item.location) ci.loc = [item.location.x, item.location.y, item.location.plane];
         return [ci];
       }
 
@@ -202,16 +260,26 @@ function buildCompactPayload(route: Route, tasks: TaskRef[]): SharePayloadV2 {
         sortId = parseInt(match[1], 10);
       }
 
+      // Emit the located-task object form when location is present.
+      if (item.location) {
+        const located: LocatedTaskShareItem = {
+          ti: sortId,
+          loc: [item.location.x, item.location.y, item.location.plane],
+        };
+        if (item.note) located.nt = item.note.slice(0, 400);
+        return [located];
+      }
+
       if (item.note) return [[sortId, item.note.slice(0, 400)]];
       return [sortId];
     });
 
-    const sec: ShareSection = { n: section.name.slice(0, 200), i: items };
+    const sec: ShareSectionV3 = { n: section.name.slice(0, 200), i: items };
     if (section.description) sec.d = section.description.slice(0, 500);
     return sec;
   });
 
-  const payload: SharePayloadV2 = { v: 2, n: route.name.trim().slice(0, 200), s: sections };
+  const payload: SharePayloadV3 = { v: 3, n: route.name.trim().slice(0, 200), s: sections };
   if (route.taskType && route.taskType !== DEFAULT_TASK_TYPE) payload.t = route.taskType;
   return payload;
 }
@@ -240,7 +308,7 @@ function decodeV2Payload(payload: SharePayloadV2, tasks: TaskRef[]): Route | nul
         if (typeof rawItem === 'number') {
           // Regular task, no note
           const taskId = sortIdToTaskId.get(rawItem);
-          if (taskId) items.push({ taskId });
+          if (taskId) items.push({ taskId, routeItemId: crypto.randomUUID() });
         } else if (
           Array.isArray(rawItem) &&
           rawItem.length === 2 &&
@@ -249,13 +317,14 @@ function decodeV2Payload(payload: SharePayloadV2, tasks: TaskRef[]): Route | nul
         ) {
           // Regular task with note
           const taskId = sortIdToTaskId.get(rawItem[0]);
-          if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400) });
+          if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
         } else if (rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)) {
           // Custom task
           const ci = rawItem as CustomShareItem;
           if (typeof ci.cn === 'string' && ci.cn.trim()) {
             const customItem: RouteItem = {
               taskId: crypto.randomUUID(),
+              routeItemId: crypto.randomUUID(),
               isCustom: true,
               customName: ci.cn.slice(0, 200),
             };
@@ -289,7 +358,109 @@ function decodeV2Payload(payload: SharePayloadV2, tasks: TaskRef[]): Route | nul
   };
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── v3 decoder ───────────────────────────────────────────────────────────────
+
+/**
+ * Decode a v3 payload into an internal Route.
+ *
+ * v3 handles all v2 item shapes (number, [number, string], { cn }) unchanged,
+ * plus the new located-task object shape { ti, nt?, loc } and extended custom
+ * item shape { cn, cd?, nt?, ic?, loc? }.
+ */
+function decodeV3Payload(payload: SharePayloadV3, tasks: TaskRef[]): Route | null {
+  if (!payload.n || !Array.isArray(payload.s) || payload.s.length === 0) return null;
+
+  const sortIdToTaskId = new Map<number, string>();
+  for (const t of tasks) sortIdToTaskId.set(t.sortId, t.id);
+
+  const sections: RouteSection[] = [];
+
+  for (const rawSec of payload.s) {
+    if (!rawSec || typeof rawSec !== 'object' || Array.isArray(rawSec)) continue;
+    const sec = rawSec as ShareSectionV3;
+
+    const sectionName =
+      typeof sec.n === 'string' && sec.n.trim() ? sec.n.trim().slice(0, 200) : 'Main';
+
+    const items: RouteItem[] = [];
+
+    if (Array.isArray(sec.i)) {
+      for (const rawItem of sec.i) {
+        if (typeof rawItem === 'number') {
+          // Regular task, no note, no location
+          const taskId = sortIdToTaskId.get(rawItem);
+          if (taskId) items.push({ taskId, routeItemId: crypto.randomUUID() });
+        } else if (
+          Array.isArray(rawItem) &&
+          rawItem.length === 2 &&
+          typeof rawItem[0] === 'number' &&
+          typeof rawItem[1] === 'string'
+        ) {
+          // Regular task with note, no location
+          const taskId = sortIdToTaskId.get(rawItem[0]);
+          if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
+        } else if (rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)) {
+          const ri = rawItem as Record<string, unknown>;
+
+          if ('ti' in ri && typeof ri.ti === 'number') {
+            // Located regular task { ti, nt?, loc }
+            const taskId = sortIdToTaskId.get(ri.ti);
+            if (taskId) {
+              const routeItem: RouteItem = { taskId, routeItemId: crypto.randomUUID() };
+              if (typeof ri.nt === 'string' && ri.nt) routeItem.note = ri.nt.slice(0, 400);
+              if (Array.isArray(ri.loc) && ri.loc.length === 3) {
+                const [x, y, plane] = ri.loc as [unknown, unknown, unknown];
+                if (typeof x === 'number' && typeof y === 'number' && typeof plane === 'number') {
+                  routeItem.location = { x, y, plane };
+                }
+              }
+              items.push(routeItem);
+            }
+          } else if ('cn' in ri && typeof ri.cn === 'string' && ri.cn.trim()) {
+            // Custom task { cn, cd?, nt?, ic?, loc? }
+            const ci = ri as CustomShareItemV3;
+            const customItem: RouteItem = {
+              taskId: crypto.randomUUID(),
+              routeItemId: crypto.randomUUID(),
+              isCustom: true,
+              customName: ci.cn.slice(0, 200),
+            };
+            if (ci.cd) customItem.customDescription = ci.cd.slice(0, 400);
+            if (ci.nt) customItem.note = ci.nt.slice(0, 400);
+            if (ci.ic) customItem.customIcon = ci.ic.slice(0, 200);
+            if (Array.isArray(ci.loc) && ci.loc.length === 3) {
+              const [x, y, plane] = ci.loc as [unknown, unknown, unknown];
+              if (typeof x === 'number' && typeof y === 'number' && typeof plane === 'number') {
+                customItem.location = { x, y, plane };
+              }
+            }
+            items.push(customItem);
+          }
+          // Unrecognised item shapes silently skipped for forward-compatibility
+        }
+      }
+    }
+
+    sections.push({
+      id: crypto.randomUUID(),
+      name: sectionName,
+      description: typeof sec.d === 'string' ? sec.d.slice(0, 500) : '',
+      items,
+    });
+  }
+
+  if (sections.length === 0) return null;
+
+  return {
+    id: crypto.randomUUID(),
+    name: payload.n,
+    taskType: typeof payload.t === 'string' ? payload.t : DEFAULT_TASK_TYPE,
+    author: '',
+    description: '',
+    completed: false,
+    sections,
+  };
+}
 
 /**
  * Read the raw `?r=` share param from the current URL.
@@ -355,6 +526,17 @@ export async function decodeSharedRoute(
   }
 
   const obj = raw as Record<string, unknown>;
+
+  if (obj.v === 3) {
+    const route = decodeV3Payload(obj as unknown as SharePayloadV3, tasks);
+    if (!route) {
+      return {
+        ok: false,
+        error: 'Invalid share link — the route data appears to be malformed or empty.',
+      };
+    }
+    return { ok: true, route };
+  }
 
   if (obj.v === 2) {
     const route = decodeV2Payload(obj as unknown as SharePayloadV2, tasks);

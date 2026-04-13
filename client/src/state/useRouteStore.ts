@@ -28,6 +28,24 @@ function createDefaultRoute(): Route {
 }
 
 /**
+ * Ensures every RouteItem has a routeItemId. Safe no-op when all items already
+ * have one. Applied after any structural migration so the DnD layer always has
+ * a stable per-entry identity that is independent of taskId.
+ */
+function ensureRouteItemIds(route: Route): Route {
+  let anyMissing = false;
+  const sections = route.sections.map((s) => {
+    const items = s.items.map((i) => {
+      if (i.routeItemId) return i;
+      anyMissing = true;
+      return { ...i, routeItemId: crypto.randomUUID() };
+    });
+    return anyMissing ? { ...s, items } : s;
+  });
+  return anyMissing ? { ...route, sections } : route;
+}
+
+/**
  * Migrates old flat-section format (all items in sections[0] with sectionName
  * metadata) to the current proper multi-section format. Safe no-op if the route
  * is already in the current format.
@@ -75,7 +93,7 @@ function loadRoute(): Route {
     typeof (saved as Route).id === 'string' &&
     Array.isArray((saved as Route).sections)
   ) {
-    return migrateRoute(saved as Route);
+    return ensureRouteItemIds(migrateRoute(saved as Route));
   }
   return createDefaultRoute();
 }
@@ -114,7 +132,7 @@ export function useRouteStore() {
         sections.push({ id: crypto.randomUUID(), name: 'Main', description: '', items: [] });
       }
       const lastIdx = sections.length - 1;
-      const lastSection: RouteSection = { ...sections[lastIdx], items: [...sections[lastIdx].items, { taskId }] };
+      const lastSection: RouteSection = { ...sections[lastIdx], items: [...sections[lastIdx].items, { taskId, routeItemId: crypto.randomUUID() }] };
       const next: Route = { ...prev, sections: [...sections.slice(0, lastIdx), lastSection] };
       saveToStorage(ROUTE_STORAGE_KEY, next);
       return next;
@@ -196,6 +214,7 @@ export function useRouteStore() {
       if (!trimmed) return prev;
       const newItem: RouteItem = {
         taskId: crypto.randomUUID(),
+        routeItemId: crypto.randomUUID(),
         isCustom: true,
         customName: trimmed,
         customDescription: trimmed,

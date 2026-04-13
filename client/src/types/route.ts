@@ -20,6 +20,8 @@ export interface RouteLocation {
 export interface RouteItem {
   /**
    * Stable task id from AppTask.id for real tasks.
+   * Format: "task-{structId}-{sortId}" — the structId and sortId are always
+   * recoverable from this string even if the task no longer resolves.
    * For custom tasks (isCustom === true) this is a locally-generated UUID
    * used purely as a stable dnd-kit / React key — it has no game meaning.
    */
@@ -46,6 +48,34 @@ export interface RouteItem {
    * Map UI (Phase 2+): full pin editing on top of this stored coordinate.
    */
   location?: RouteLocation;
+
+  // ─── Identity snapshot (migration seam) ────────────────────────────────
+  /**
+   * Snapshot of task identity at the time the item was added to the route.
+   * Present on real (non-custom) tasks when populated by the caller.
+   *
+   * Purpose: preserves enough context to:
+   *   1. Display a meaningful fallback row if the task no longer resolves
+   *      (e.g. cross-league routes, incomplete transitional datasets).
+   *   2. Map old temporary League 6 struct IDs → official IDs on release day
+   *      using the taskKey field.
+   *
+   * Do NOT depend on this field being present — it is additive and may be absent
+   * on items created before this field was introduced.
+   */
+  _snap?: {
+    /** Display name at time of creation — used in unresolved fallback rows. */
+    name: string;
+    /** structId at time of creation. May be temporary (League 6 transitional). */
+    structId: number;
+    /** sortId at time of creation. Stable within a single league dataset. */
+    sortId: number;
+    /**
+     * Wiki-fallback stable key (League 6+). Absent for earlier leagues.
+     * Release-day migration: use this key to map old route items to official IDs.
+     */
+    taskKey?: string;
+  };
 
   // ─── Custom task fields ─────────────────────────────────────────────────
   /**

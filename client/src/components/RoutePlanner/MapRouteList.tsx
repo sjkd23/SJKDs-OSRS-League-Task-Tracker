@@ -396,6 +396,23 @@ export function MapRouteList({
               isFocused,
               isCustom: false,
             };
+          } else {
+            // Unresolved task — show what identity info we can derive.
+            const snapName = item._snap?.name ?? (() => {
+              const m = item.taskId.match(/^task-\d+-(\d+)$/);
+              return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
+            })();
+            detail = {
+              name: snapName,
+              desc: 'This task could not be found in the current dataset.',
+              reqs: null,
+              note: item.note ?? null,
+              globalPos,
+              isPinnable,
+              isCompleted: false,
+              isFocused,
+              isCustom: false,
+            };
           }
         }
         break outer;
@@ -479,7 +496,10 @@ export function MapRouteList({
                     const isCompleted = task?.completed ?? false;
                     const label = item.isCustom
                       ? (item.customName ?? 'Custom task')
-                      : (task?.name ?? 'Task');
+                      : task?.name ?? item._snap?.name ?? (() => {
+                          const m = item.taskId.match(/^task-\d+-(\d+)$/);
+                          return m ? `Task #${m[1]}` : 'Preserved task';
+                        })();
 
                     return (
                       <SortableMapRow
@@ -612,7 +632,9 @@ export function MapRouteList({
           if (!draggingItem) return null;
           const dragLabel = draggingItem.isCustom
             ? (draggingItem.customName ?? 'Custom task')
-            : (taskMap.get(draggingItem.taskId)?.name ?? 'Task');
+            : taskMap.get(draggingItem.taskId)?.name
+              ?? draggingItem._snap?.name
+              ?? (() => { const m = draggingItem.taskId.match(/^task-\d+-(\d+)$/); return m ? `Task #${m[1]}` : 'Task'; })();
           const isPinnable = pinnableIds.has(draggingId);
           return (
             <div className="flex items-center gap-2 px-2 py-1.5 bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-lg text-[13px] text-wiki-text dark:text-wiki-text-dark max-w-[220px] pointer-events-none">

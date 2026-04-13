@@ -19,13 +19,28 @@ export interface ScraperTask {
   name: string;
   description: string;
   area: string;
-  category: string;
+  /**
+   * Broad task category, e.g. "Combat", "Skill", "Quest".
+   * May be null when not set in the game cache (common in transitional League 6 data).
+   * Normalised to "Other" by mapScraperTask when null.
+   */
+  category: string | null;
   /**
    * League skill category, e.g. "All", "Combat", "Artisan", "Gathering",
    * "Support", "Unlocked". May be null when not set in the game cache.
    * This is NOT an individual OSRS skill — it is a high-level task grouping.
    */
   skill: string | null;
+  /**
+   * Wiki-derived stable fallback key, present in transitional League 6 data.
+   * Format: "wiki:fallback:{sortId}:{slug}", e.g. "wiki:fallback:0:defeat-a-troll-in-asgarnia".
+   * Acts as a cross-site interoperability anchor that does not depend on
+   * the final official struct IDs. Absent in League 5 and earlier data.
+   *
+   * Migration seam: on release day, the official struct IDs replace the temporary ones;
+   * taskKey survives as a stable mapping key between old routes and new IDs.
+   */
+  taskKey?: string;
   /** Numeric tier: 1 = Easy, 2 = Medium, 3 = Hard, 4 = Elite, 5 = Master */
   tier: number;
   /** String version of the tier, e.g. "Easy". Preferred over numeric tier. */

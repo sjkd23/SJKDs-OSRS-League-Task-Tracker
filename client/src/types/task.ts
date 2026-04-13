@@ -20,12 +20,31 @@ export type Difficulty = Tier;
  * User state (completed / todo / favourite) lives in TaskUserState.
  */
 export interface AppTask {
-  /** Stable id: `task-${structId}-${sortId}` */
+  /**
+   * Stable app-internal ID: `task-${structId}-${sortId}`.
+   *
+   * For League 6, structId may be a temporary/community value until official cache
+   * data is released. The format is intentionally stable: route items store this
+   * as their taskId and it can be decoded back to structId+sortId at any time.
+   */
   id: string;
-  /** Numeric struct ID from scraper output */
+  /**
+   * Numeric struct ID from scraper output.
+   * For League 6 (transitional): may be a temporary community-assigned value.
+   * Used as the plugin export's numeric taskId for plugin interoperability.
+   * Do NOT replace this with official IDs until the final League 6 migration.
+   */
   structId: number;
   /** Numeric sort index from scraper output */
   sortId: number;
+
+  /**
+   * Wiki-derived stable fallback key (League 6+).
+   * Absent for League 5 and earlier tasks.
+   * Migration seam: when official League 6 IDs are released, taskKey lets us
+   * map between old temporary routes and the new official struct IDs.
+   */
+  taskKey?: string;
 
   /** Display area / region, e.g. "Global", "Morytania", "Varlamore" */
   area: string;

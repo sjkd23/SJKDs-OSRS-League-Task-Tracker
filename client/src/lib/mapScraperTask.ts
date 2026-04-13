@@ -122,8 +122,9 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     area: raw.area,
     name: cleanWikiGarbage(raw.name),
     description: cleanWikiGarbage(raw.description),
-    category: raw.category,
-    uiCategory: deriveUICategory(raw.name, raw.category),
+    // category can be null in transitional League 6 data — normalise to 'Other'
+    category: raw.category ?? 'Other',
+    uiCategory: deriveUICategory(raw.name, raw.category ?? 'Other'),
     // null means the same as "All" in the league data — no specific skill tier
     skill: raw.skill ?? 'All',
     tier,
@@ -135,6 +136,8 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     requirementsText: cleanWikiGarbage(requirementsText).trim(),
     ptsLabel: `${tier} – ${points}`,
     wikiUrl: raw.wikiUrl,
+    // taskKey: wiki-fallback stable identity (League 6+), absent in earlier data
+    ...(raw.taskKey ? { taskKey: raw.taskKey } : {}),
     // ── Rich-text parts: passed through as-is; optional / may be absent ──
     nameParts: cleanTextParts(raw.nameParts),
     descriptionParts: cleanTextParts(raw.descriptionParts),

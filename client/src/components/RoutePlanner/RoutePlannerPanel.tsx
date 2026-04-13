@@ -765,6 +765,119 @@ function SortableCustomRow({
   );
 }
 
+// ─── Unresolved task row ───────────────────────────────────────────────────────
+//
+// Rendered when a route item's taskId does not match any task in the current
+// dataset (e.g. cross-league routes, incomplete transitional data, or future
+// dataset updates that removed a task).
+//
+// The row is visually distinct (muted/italic) so the user can tell it is a
+// preserved placeholder, and the remove button works normally.
+// The item remains in the route and round-trips correctly through share/export.
+
+interface UnresolvedTaskRowProps {
+  item: RouteItem;
+  listPos: number;
+  isRunMode: boolean;
+  onRemove: (taskId: string) => void;
+}
+
+function UnresolvedTaskRow({ item, listPos, isRunMode, onRemove }: UnresolvedTaskRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.routeItemId });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 2 : undefined,
+  };
+
+  const stripeClass = listPos % 2 === 0 ? 'row-alt' : '';
+
+  // Extract what identity information we can from the taskId or _snap.
+  const displayName = item._snap?.name ?? (() => {
+    const m = item.taskId.match(/^task-\d+-(\d+)$/);
+    return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
+  })();
+
+  return (
+    <tr
+      ref={setNodeRef}
+      data-route-item-id={item.routeItemId}
+      style={style}
+      className={[
+        stripeClass,
+        isRunMode ? '' : 'cursor-grab active:cursor-grabbing',
+        'opacity-60',
+      ].filter(Boolean).join(' ')}
+      title="This task could not be found in the current dataset. It has been preserved in your route."
+      {...attributes}
+      {...(isRunMode ? {} : listeners)}
+    >
+      {/* # */}
+      <td className="px-1 py-1.5 align-middle w-12">
+        <div className="flex items-center justify-center">
+          <span className="text-[12px] font-semibold tabular-nums leading-none text-wiki-muted dark:text-wiki-muted-dark">
+            {listPos + 1}
+          </span>
+        </div>
+      </td>
+      {/* Area */}
+      <td className="px-2 py-1.5 text-center align-middle">
+        <span className="text-wiki-muted dark:text-wiki-muted-dark text-[10px]">?</span>
+      </td>
+      {/* Name */}
+      <td className="px-2 py-1.5 align-middle">
+        <span className="italic text-wiki-muted dark:text-wiki-muted-dark text-[12px]">{displayName}</span>
+      </td>
+      {/* Description */}
+      <td className="px-2 py-1.5 align-middle">
+        <span className="italic text-wiki-muted dark:text-wiki-muted-dark text-[11px]">
+          Task not found in current dataset
+        </span>
+      </td>
+      {/* Requirements */}
+      <td className="px-2 py-1.5 align-middle">
+        {item.note ? (
+          <span className="text-wiki-muted dark:text-wiki-muted-dark text-[12px]">{item.note}</span>
+        ) : (
+          <span className="text-wiki-muted dark:text-wiki-muted-dark font-medium">—</span>
+        )}
+      </td>
+      {/* Points */}
+      <td className="p-0 align-middle whitespace-nowrap">
+        <div className="flex items-center justify-center gap-1 px-1 py-1.5">
+          <span className="tabular-nums text-wiki-muted dark:text-wiki-muted-dark">?</span>
+        </div>
+      </td>
+      {/* Actions */}
+      <td className="p-0 align-middle text-center w-20">
+        <div className="flex items-center justify-center gap-0.5 px-1 py-1.5">
+          {!isRunMode && (
+            <button
+              onClick={() => onRemove(item.taskId)}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={`Remove preserved task from route`}
+              aria-label={`Remove preserved task "${displayName}" from route`}
+              className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors cursor-pointer"
+            >
+              <TrashIcon />
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ─── Section header row ────────────────────────────────────────────────────────
 
 interface SectionHeaderRowProps {
@@ -1050,7 +1163,19 @@ function TableSection({
           );
         }
         const task = taskMap.get(item.taskId);
-        if (!task) return null;
+        if (!task) {
+          // Task not found in the current dataset — render a preserved placeholder
+          // instead of dropping the item silently. The user can still remove it.
+          return (
+            <UnresolvedTaskRow
+              key={item.routeItemId}
+              item={item}
+              listPos={listPos}
+              isRunMode={isRunMode}
+              onRemove={onRemoveTask}
+            />
+          );
+        }
         return (
           <SortableRow
             key={item.taskId}
@@ -1728,7 +1853,29 @@ function MobileRouteSection({
               />
             ) : (() => {
               const task = taskMap.get(item.taskId);
-              if (!task) return null;
+              if (!task) {
+                // Render a muted placeholder card instead of dropping the item.
+                const snapName = item._snap?.name ?? (() => {
+                  const m = item.taskId.match(/^task-\d+-(\d+)$/);
+                  return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
+                })();
+                return (
+                  <div
+                    className="px-3 py-2 border border-dashed border-wiki-border dark:border-wiki-border-dark rounded-sm opacity-60"
+                    title="This task could not be found in the current dataset."
+                  >
+                    <span className="text-[11px] italic text-wiki-muted dark:text-wiki-muted-dark">{snapName}</span>
+                    {!isRunMode && (
+                      <button
+                        onClick={() => onRemoveTask(item.taskId)}
+                        className="ml-2 text-[11px] text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                );
+              }
               return (
                 <SortableRouteCard
                   item={item}
@@ -1818,7 +1965,12 @@ export function RoutePlannerPanel({
         let matches = false;
         if (!item.isCustom) {
           const task = taskMap.get(item.taskId);
-          if (task) matches = filterTasks([task], filters).length > 0;
+          if (task) {
+            matches = filterTasks([task], filters).length > 0;
+          } else {
+            // Unresolved task — always show so the user can see and remove it.
+            matches = true;
+          }
         } else {
           matches = true;
           const query = filters.searchQuery.trim().toLowerCase();
@@ -2151,7 +2303,7 @@ export function RoutePlannerPanel({
     const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
     infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
     if (result.unmapped > 0) {
-      infoParts.push(`skipped ${result.unmapped} unrecognized item${result.unmapped !== 1 ? 's' : ''}`);
+      infoParts.push(`preserved ${result.unmapped} task${result.unmapped !== 1 ? 's' : ''} not found in current dataset`);
     }
     setImportInfo(infoParts.join(', ') + '.');
     setImportStatus('success');
@@ -2176,7 +2328,7 @@ export function RoutePlannerPanel({
     const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
     infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
     if (result.unmapped > 0) {
-      infoParts.push(`skipped ${result.unmapped} unrecognized item${result.unmapped !== 1 ? 's' : ''}`);
+      infoParts.push(`preserved ${result.unmapped} task${result.unmapped !== 1 ? 's' : ''} not found in current dataset`);
     }
     setImportInfo(infoParts.join(', ') + '.');
     setMobileImportOpen(false);

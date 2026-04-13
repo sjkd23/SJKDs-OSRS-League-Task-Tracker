@@ -5,7 +5,7 @@ import type { Route, RouteSection, RouteItem } from '@/types/route';
 /** URL query-param key used for shared routes. Kept short to minimise URL length. */
 export const SHARE_PARAM = 'r';
 
-const DEFAULT_TASK_TYPE = 'LEAGUE_5';
+const DEFAULT_TASK_TYPE = 'LEAGUE_6';
 
 /**
  * Prefix character that distinguishes v2-compressed links from legacy v2-plain links.
@@ -254,9 +254,23 @@ function buildCompactPayload(route: Route, tasks: TaskRef[]): SharePayloadV3 {
 
       let sortId = taskIdToSortId.get(item.taskId);
       if (sortId === undefined) {
-        // Fallback: extract sortId from the "task-structId-sortId" string format
+        // Fallback: extract sortId from the "task-structId-sortId" string format.
+        // This handles previously-resolved tasks whose taskId we can still parse
+        // (e.g. cross-league routes or items from an incomplete transitional dataset).
         const match = item.taskId.match(/^task-\d+-(\d+)$/);
-        if (!match) return []; // drop unresolvable items silently
+        if (!match) {
+          // taskId is not in the standard format and not in the lookup map.
+          // Preserve as a named custom placeholder so the item is not silently lost.
+          const fallback: CustomShareItemV3 = {
+            cn: (item._snap?.name ?? `Unresolved task`).slice(0, 200),
+            cd: item._snap
+              ? `Preserved from route (structId ${item._snap.structId}, sortId ${item._snap.sortId})`
+              : `Preserved unresolved route item`,
+          };
+          if (item.note) fallback.nt = item.note.slice(0, 400);
+          if (item.location) fallback.loc = [item.location.x, item.location.y, item.location.plane];
+          return [fallback];
+        }
         sortId = parseInt(match[1], 10);
       }
 
@@ -308,7 +322,13 @@ function decodeV2Payload(payload: SharePayloadV2, tasks: TaskRef[]): Route | nul
         if (typeof rawItem === 'number') {
           // Regular task, no note
           const taskId = sortIdToTaskId.get(rawItem);
-          if (taskId) items.push({ taskId, routeItemId: crypto.randomUUID() });
+          if (taskId) {
+            items.push({ taskId, routeItemId: crypto.randomUUID() });
+          } else {
+            // sortId not found in current task list — preserve as a resolvable placeholder.
+            // The taskId encodes sortId so the item can be identified later.
+            items.push({ taskId: `task-0-${rawItem}`, routeItemId: crypto.randomUUID(), _snap: { name: `Task #${rawItem}`, structId: 0, sortId: rawItem } });
+          }
         } else if (
           Array.isArray(rawItem) &&
           rawItem.length === 2 &&
@@ -317,7 +337,11 @@ function decodeV2Payload(payload: SharePayloadV2, tasks: TaskRef[]): Route | nul
         ) {
           // Regular task with note
           const taskId = sortIdToTaskId.get(rawItem[0]);
-          if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
+          if (taskId) {
+            items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
+          } else {
+            items.push({ taskId: `task-0-${rawItem[0]}`, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID(), _snap: { name: `Task #${rawItem[0]}`, structId: 0, sortId: rawItem[0] } });
+          }
         } else if (rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)) {
           // Custom task
           const ci = rawItem as CustomShareItem;
@@ -389,7 +413,11 @@ function decodeV3Payload(payload: SharePayloadV3, tasks: TaskRef[]): Route | nul
         if (typeof rawItem === 'number') {
           // Regular task, no note, no location
           const taskId = sortIdToTaskId.get(rawItem);
-          if (taskId) items.push({ taskId, routeItemId: crypto.randomUUID() });
+          if (taskId) {
+            items.push({ taskId, routeItemId: crypto.randomUUID() });
+          } else {
+            items.push({ taskId: `task-0-${rawItem}`, routeItemId: crypto.randomUUID(), _snap: { name: `Task #${rawItem}`, structId: 0, sortId: rawItem } });
+          }
         } else if (
           Array.isArray(rawItem) &&
           rawItem.length === 2 &&
@@ -398,23 +426,37 @@ function decodeV3Payload(payload: SharePayloadV3, tasks: TaskRef[]): Route | nul
         ) {
           // Regular task with note, no location
           const taskId = sortIdToTaskId.get(rawItem[0]);
-          if (taskId) items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
+          if (taskId) {
+            items.push({ taskId, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID() });
+          } else {
+            items.push({ taskId: `task-0-${rawItem[0]}`, note: rawItem[1].slice(0, 400), routeItemId: crypto.randomUUID(), _snap: { name: `Task #${rawItem[0]}`, structId: 0, sortId: rawItem[0] } });
+          }
         } else if (rawItem && typeof rawItem === 'object' && !Array.isArray(rawItem)) {
           const ri = rawItem as unknown as Record<string, unknown>;
 
           if ('ti' in ri && typeof ri.ti === 'number') {
             // Located regular task { ti, nt?, loc }
             const taskId = sortIdToTaskId.get(ri.ti);
+            const loc = Array.isArray(ri.loc) && ri.loc.length === 3
+              ? (() => {
+                  const [x, y, plane] = ri.loc as [unknown, unknown, unknown];
+                  return (typeof x === 'number' && typeof y === 'number' && typeof plane === 'number')
+                    ? { x, y, plane }
+                    : undefined;
+                })()
+              : undefined;
+
             if (taskId) {
               const routeItem: RouteItem = { taskId, routeItemId: crypto.randomUUID() };
               if (typeof ri.nt === 'string' && ri.nt) routeItem.note = ri.nt.slice(0, 400);
-              if (Array.isArray(ri.loc) && ri.loc.length === 3) {
-                const [x, y, plane] = ri.loc as [unknown, unknown, unknown];
-                if (typeof x === 'number' && typeof y === 'number' && typeof plane === 'number') {
-                  routeItem.location = { x, y, plane };
-                }
-              }
+              if (loc) routeItem.location = loc;
               items.push(routeItem);
+            } else {
+              // Preserve unresolved located task
+              const preserved: RouteItem = { taskId: `task-0-${ri.ti}`, routeItemId: crypto.randomUUID(), _snap: { name: `Task #${ri.ti}`, structId: 0, sortId: ri.ti } };
+              if (typeof ri.nt === 'string' && ri.nt) preserved.note = ri.nt.slice(0, 400);
+              if (loc) preserved.location = loc;
+              items.push(preserved);
             }
           } else if ('cn' in ri && typeof ri.cn === 'string' && ri.cn.trim()) {
             // Custom task { cn, cd?, nt?, ic?, loc? }

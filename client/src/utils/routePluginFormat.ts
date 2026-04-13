@@ -197,6 +197,24 @@ export function parsePluginRoute(
           imported++;
           continue;
         }
+
+        // structId not found in the current task dataset.
+        // Preserve as a placeholder so the item is not silently lost.
+        // The _snap field records the structId for future migration (e.g. releasing official IDs).
+        const noteName = typeof it.note === 'string' && it.note ? it.note : undefined;
+        const preserved: RouteItem = {
+          // Use sortId=0 placeholder — the real sortId is unknown from a plugin import.
+          // structId is the only identity we have from the plugin format.
+          taskId: `task-${numericId}-0`,
+          routeItemId: crypto.randomUUID(),
+          _snap: { name: `Task (structId ${numericId})`, structId: numericId, sortId: 0 },
+          ...(noteName ? { note: noteName } : {}),
+        };
+        const loc = parsePluginLocation(it);
+        if (loc) preserved.location = loc;
+        sectionItems.push(preserved);
+        unmapped++;
+        continue;
       }
 
       const rawCustomItem =

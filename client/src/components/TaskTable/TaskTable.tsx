@@ -81,27 +81,24 @@ export function TaskTable({
         <thead>
           <tr>
             {COLUMNS.map(({ label, field, className }) => {
+              // In planner mode, the To-do/Add column is removed entirely.
+              // The whole row is clickable to add tasks, so no dedicated action column is needed.
+              if (mode === 'planner' && field === 'isTodo') return null;
               const isSorted = sort.field === field;
-              // In planner mode, the last column is an add-to-route action.
-              // It has no meaningful sort order, so clicking it does nothing.
-              const isPlannerActionCol = field === 'isTodo' && mode === 'planner';
-              const colLabel = isPlannerActionCol ? 'Add' : label;
               return (
                 <th
                   key={label}
-                  onClick={isPlannerActionCol ? undefined : () => onSortChange(field)}
+                  onClick={() => onSortChange(field)}
                   style={{ top: 'var(--sticky-offset, 0px)' }}
                   className={[
                     'sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark shadow-[0_1px_0_rgba(0,0,0,0.05)]',
                     'px-2 py-2 font-semibold whitespace-nowrap text-center transition-colors',
-                    isPlannerActionCol
-                      ? 'cursor-default'
-                      : 'cursor-pointer select-none hover:text-wiki-link dark:hover:text-wiki-link-dark',
+                    'cursor-pointer select-none hover:text-wiki-link dark:hover:text-wiki-link-dark',
                     className ?? '',
                   ].join(' ')}
                 >
-                  {colLabel}
-                  {!isPlannerActionCol && isSorted && (
+                  {label}
+                  {isSorted && (
                     <span className="ml-1 text-[10px] opacity-70">
                       {sort.direction === 'asc' ? '▲' : '▼'}
                     </span>
@@ -112,25 +109,28 @@ export function TaskTable({
           </tr>
         </thead>
         <tbody>
-          {tasks.length === 0 ? (
-            <tr>
-              <td
-                colSpan={COLUMNS.length}
-                className="text-center py-8 text-wiki-muted dark:text-wiki-muted-dark italic text-[13px]"
-              >
-                No tasks match the current filters.{' '}
-                <span className="not-italic text-wiki-link dark:text-wiki-link-dark cursor-pointer hover:underline">
-                  Try adjusting or resetting the filters.
-                </span>
-              </td>
-            </tr>
-          ) : (
-            <>
-              {paddingTop > 0 && (
-                <tr aria-hidden="true">
-                  <td colSpan={COLUMNS.length} style={{ height: paddingTop, padding: 0, border: 'none' }} />
-                </tr>
-              )}
+          {(() => {
+            // In planner mode the To-do column is hidden, reducing column count by 1.
+            const colCount = mode === 'planner' ? COLUMNS.length - 1 : COLUMNS.length;
+            return tasks.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={colCount}
+                  className="text-center py-8 text-wiki-muted dark:text-wiki-muted-dark italic text-[13px]"
+                >
+                  No tasks match the current filters.{' '}
+                  <span className="not-italic text-wiki-link dark:text-wiki-link-dark cursor-pointer hover:underline">
+                    Try adjusting or resetting the filters.
+                  </span>
+                </td>
+              </tr>
+            ) : (
+              <>
+                {paddingTop > 0 && (
+                  <tr aria-hidden="true">
+                    <td colSpan={colCount} style={{ height: paddingTop, padding: 0, border: 'none' }} />
+                  </tr>
+                )}
               {virtualRows.map((virtualRow) => (
                 <TaskRow
                   key={virtualRow.key}
@@ -145,11 +145,12 @@ export function TaskTable({
               ))}
               {paddingBottom > 0 && (
                 <tr aria-hidden="true">
-                  <td colSpan={COLUMNS.length} style={{ height: paddingBottom, padding: 0, border: 'none' }} />
+                  <td colSpan={colCount} style={{ height: paddingBottom, padding: 0, border: 'none' }} />
                 </tr>
               )}
             </>
-          )}
+            );
+          })()}
         </tbody>
       </table>
     </div>

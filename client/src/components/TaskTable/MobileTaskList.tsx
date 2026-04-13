@@ -36,6 +36,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
   onToggleCompleted,
   onToggleTodo,
   mode = 'tracker',
+  isInRoute = false,
   onAddToRoute,
 }: {
   task: TaskView;
@@ -49,15 +50,49 @@ const MobileTaskCard = memo(function MobileTaskCard({
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
   const areaUrl = regionWikiUrl(task.area);
+  const isPlanner = mode === 'planner';
 
-  // Styling based on wiki completed rows logic
+  // Visual state precedence: completed (green) > in-route (yellow) > default
   const cardBgClass = task.completed
     ? 'bg-[#c8e8c8] text-[#4a6b4a] dark:bg-[#182b18] dark:text-[#7aaa7a] border-[#b8ddb8] dark:border-[#1e3620]'
+    : isInRoute && isPlanner
+    ? 'bg-[#f5e8a0] text-[#5a4a00] dark:bg-[#302800] dark:text-[#d4b84a] border-[#e8d880] dark:border-[#483800]'
     : 'bg-wiki-surface dark:bg-wiki-surface-dark border-wiki-border dark:border-wiki-border-dark';
+
+  // In planner mode: whole card is the add target (unless already in route).
+  function handleCardClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!isPlanner) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('a, button, input')) return;
+    onAddToRoute?.(task.id);
+  }
+
+  function handleCardKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (!isPlanner || isInRoute) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onAddToRoute?.(task.id);
+    }
+  }
 
   return (
     <div
-      className={['flex flex-col border rounded-sm shadow-sm overflow-hidden transition-colors', cardBgClass].join(' ')}
+      className={[
+        'flex flex-col border rounded-sm shadow-sm overflow-hidden transition-colors',
+        isPlanner && !isInRoute ? 'cursor-pointer' : '',
+        cardBgClass,
+      ].filter(Boolean).join(' ')}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      tabIndex={isPlanner && !isInRoute ? 0 : undefined}
+      role={isPlanner && !isInRoute ? 'button' : undefined}
+      aria-label={
+        isPlanner
+          ? isInRoute
+            ? `${task.name} — already in route`
+            : `${task.name} — tap to add to route`
+          : undefined
+      }
     >
       {/* HEADER: Area Icon, Name, Tier/Points, Completion % */}
       <div className="flex items-start gap-2 p-3 pb-2 border-b border-wiki-border dark:border-wiki-border-dark/50">
@@ -159,14 +194,14 @@ const MobileTaskCard = memo(function MobileTaskCard({
       {/* ACTIONS */}
       <div className="flex items-stretch divide-x divide-wiki-border dark:divide-wiki-border-dark/50 border-t border-wiki-border dark:border-wiki-border-dark/50">
         {mode === 'planner' ? (
-          // Route Planner: single Add-to-route action.
-          // Tasks already in the route are excluded from this list entirely.
-          <button
-            onClick={() => onAddToRoute?.(task.id)}
-            className="flex-1 py-3 px-2 text-[14px] font-semibold text-center transition-colors touch-manipulation flex items-center justify-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-wiki-text dark:text-wiki-text-dark"
-          >
-            ⊕ Add to Route
-          </button>
+          // Route Planner: status indicator at the bottom. The whole card is the clickable target.
+          <div className="flex-1 py-2.5 text-center text-[12px] font-medium select-none">
+            {isInRoute ? (
+              <span className="text-[#5a4a00] dark:text-[#d4b84a]">✓ In Route</span>
+            ) : (
+              <span className="text-wiki-muted dark:text-wiki-muted-dark">Tap to add to route</span>
+            )}
+          </div>
         ) : (
           // Task Tracker: normal complete + to-do actions
           <>

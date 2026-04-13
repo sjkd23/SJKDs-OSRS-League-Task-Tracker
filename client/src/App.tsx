@@ -158,16 +158,10 @@ export default function App() {
     (filters.searchQuery.trim() ? 1 : 0),
   [filters]);
 
-  // In planner mode, tasks already in the active route are removed from the lower
-  // source list so users see only tasks they can still add. In tracker mode, the
-  // full filtered list is used unchanged.
-  const displayTasks = useMemo(
-    () =>
-      appMode === 'planner'
-        ? visibleTasks.filter((t) => !taskIdsInRoute.has(t.id))
-        : visibleTasks,
-    [appMode, visibleTasks, taskIdsInRoute],
-  );
+  // In planner mode all visible tasks are shown — tasks already in the route remain
+  // visible with a yellow "in route" indicator rather than being removed from the list.
+  // taskIdsInRoute is forwarded to the table/card components for per-row state styling.
+  const displayTasks = visibleTasks;
 
   // Route planner summary stats — used by the mobile sticky bar in planner mode
   const routeItemCount = useMemo(
@@ -529,18 +523,18 @@ export default function App() {
         )}
       </div>
 
-      {/* ── Available Tasks — separate wiki-article so the page bg shows between ── */}
+      {/* ── Task List ─ separate wiki-article so the page bg shows between ──────────────── */}
       {/* Root cause of the old gap not working: planner and tasks shared one        */}
       {/* wiki-article surface. Closing that article and starting a new one below    */}
       {/* lets the bg-wiki-bg of the outer container show through as a real gap.     */}
       {appMode === 'planner' && (
-        <div className="wiki-article mt-4" id="available-tasks">
+        <div className="wiki-article mt-4" id="task-list">
           <div className="py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-3">
             <span className="font-bold text-[18px] text-wiki-text dark:text-wiki-text-dark">
-              Available Tasks
+              Task List
             </span>
             <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark">
-              click <span className="font-semibold">+</span> on any row to add it to your route
+              click any row to add it to your route
             </span>
           </div>
           <main className="pb-6">
@@ -556,6 +550,7 @@ export default function App() {
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
                 mode={appMode}
+                taskIdsInRoute={taskIdsInRoute}
                 onAddToRoute={addTaskToRoute}
               />
             ) : (
@@ -566,6 +561,7 @@ export default function App() {
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
                 mode={appMode}
+                taskIdsInRoute={taskIdsInRoute}
                 onAddToRoute={addTaskToRoute}
               />
             )}

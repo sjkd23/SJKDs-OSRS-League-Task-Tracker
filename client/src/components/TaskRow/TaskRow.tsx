@@ -52,40 +52,66 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', onAddToRoute }: TaskRowProps) {
+export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
   const isPlanner = mode === 'planner';
 
   /**
-   * Row-level click handler for completion toggle.
-   * Ignored in Route Planner mode — only explicit planner controls perform actions.
-   * Also ignored when the click originates from an interactive child element.
+   * Row-level click handler.
+   * Tracker mode: toggles task completion.
+   * Planner mode: adds the task to the route (store deduplicates silently).
+   * Ignored when the click originates from interactive child elements.
    */
   function handleRowClick(e: React.MouseEvent<HTMLTableRowElement>) {
-    if (isPlanner) return;
     const target = e.target as HTMLElement;
     if (target.closest('a, button, input, [role="button"]')) return;
+    if (isPlanner) {
+      onAddToRoute?.(task.id);
+      return;
+    }
     onToggleCompleted(task.id);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTableRowElement>) {
+    if (!isPlanner || isInRoute) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onAddToRoute?.(task.id);
+    }
   }
 
   // Even-indexed rows (0, 2, 4 …) get the alt/slightly-darker stripe to preserve
   // the same visual rhythm as the old :nth-child(odd) rule (child 1 = index 0).
   const stripeClass = rowIndex % 2 === 0 ? 'row-alt' : '';
 
-  // In planner mode: keep task-completed styling (informational) but drop
-  // task-completable (which implies the row click does something).
-  const completionClass = task.completed
+  // Visual state precedence: completed (green) > in-route (yellow) > addable (clickable) > default
+  const stateClass = task.completed
     ? 'task-completed'
-    : isPlanner ? '' : 'task-completable';
+    : isPlanner
+    ? isInRoute ? 'task-in-route' : 'task-addable'
+    : 'task-completable';
+
+  // In planner mode: pointer when the task can still be added, default when already in route.
+  const rowCursor = isPlanner ? (isInRoute ? 'default' : 'pointer') : 'pointer';
+
+  const ariaLabel = isPlanner
+    ? isInRoute
+      ? `${task.name} — already in route`
+      : `${task.name} — click to add to route`
+    : task.completed
+    ? `${task.name} — completed`
+    : `${task.name} — click to mark complete`;
 
   return (
     <tr
-      className={[completionClass, stripeClass].filter(Boolean).join(' ')}
+      className={[stateClass, stripeClass].filter(Boolean).join(' ')}
       onClick={handleRowClick}
-      style={{ cursor: isPlanner ? 'default' : 'pointer' }}
-      aria-label={isPlanner ? task.name : (task.completed ? `${task.name} — completed` : `${task.name} — click to mark complete`)}
+      onKeyDown={handleKeyDown}
+      tabIndex={isPlanner && !isInRoute ? 0 : undefined}
+      style={{ cursor: rowCursor }}
+      aria-label={ariaLabel}
     >
       {/* Area — region icon; clickable for named regions, plain for Global */}
       <td className="px-2 py-1.5 text-center align-middle">
@@ -187,24 +213,10 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
         </div>
       </td>
 
-      {/* Action cell — To-do bookmark in tracker mode; Add-to-route in planner mode */}
-      <td className="p-0 align-middle">
-        {isPlanner ? (
-          // Route Planner: + button to add this task to the active route.
-          // Tasks already in the route are excluded from this list entirely,
-          // so the button is always active here.
-          <button
-            onClick={(e) => { e.stopPropagation(); onAddToRoute?.(task.id); }}
-            title="Add to route"
-            aria-label={`Add ${task.name} to route`}
-            className="w-full flex items-center justify-center py-2 transition-colors text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark"
-          >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-[16px] h-[16px]" aria-hidden="true">
-              <path d="M8 3v10M3 8h10" />
-            </svg>
-          </button>
-        ) : (
-          // Task Tracker: standard To-do bookmark toggle
+      {/* Action cell — To-do bookmark in tracker mode only; not shown in planner mode */}
+      {!isPlanner && (
+        <td className="p-0 align-middle">
+          {/* Task Tracker: standard To-do bookmark toggle */}
           <button
             onClick={(e) => { e.stopPropagation(); onToggleTodo(task.id); }}
             title={task.isTodo ? 'Remove from To-do list' : 'Add to To-do list'}
@@ -228,8 +240,8 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
               <path d="M2 1h8a1 1 0 0 1 1 1v11l-5-3-5 3V2a1 1 0 0 1 1-1Z" />
             </svg>
           </button>
-        )}
-      </td>
+        </td>
+      )}
     </tr>
   );
 });

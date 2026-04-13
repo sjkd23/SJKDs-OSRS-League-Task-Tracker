@@ -155,6 +155,60 @@
     background-color: #1a2d1e !important;
   }
 
+  /* ── In-route row (route planner task list) ─────────────────────────────── */
+  /* Applied in planner mode when a task has been added to the route but not   */
+  /* yet completed. Uses !important to beat .row-alt and base tr at equal       */
+  /* specificity, matching the same pattern as .task-completed.                 */
+  .wikitable tbody tr.task-in-route {
+    background-color: #f5e8a0 !important;
+    filter: none !important;
+  }
+  .dark .wikitable tbody tr.task-in-route {
+    background-color: #302800 !important;
+    filter: none !important;
+  }
+  .wikitable tbody tr.task-in-route td {
+    opacity: 0.90;
+  }
+  .wikitable tbody tr.task-in-route:hover {
+    background-color: #eedca0 !important;
+  }
+  .dark .wikitable tbody tr.task-in-route:hover {
+    background-color: #3d3400 !important;
+  }
+  /* Keep the yellow uniform across req-na-cell inside in-route rows */
+  .wikitable tbody tr.task-in-route .req-na-cell {
+    background-color: #f5e8a0 !important;
+  }
+  .dark .wikitable tbody tr.task-in-route .req-na-cell {
+    background-color: #302800 !important;
+  }
+  .wikitable tbody tr.task-in-route:hover .req-na-cell {
+    background-color: #eedca0 !important;
+  }
+  .dark .wikitable tbody tr.task-in-route:hover .req-na-cell {
+    background-color: #3d3400 !important;
+  }
+
+  /* ── Addable row (planner mode, not yet in route) ────────────────────────── */
+  /* Clickable rows in the task list that haven't been added to the route yet.  */
+  /* Uses a subtle blue tint on hover to signal "this will do something".       */
+  .wikitable tbody tr.task-addable {
+    cursor: pointer;
+  }
+  .wikitable tbody tr.task-addable:hover {
+    filter: none !important;
+    background-color: #e8f0ff !important;
+  }
+  .dark .wikitable tbody tr.task-addable:hover {
+    filter: none !important;
+    background-color: #1a2840 !important;
+  }
+  .wikitable tbody tr.task-addable:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+  }
+
   /* ── N/A requirements cell ──────────────────────────────────────────────── */
   /* Fixed pale beige that overrides the alternating row pattern so every    */
   /* N/A cell looks identical regardless of odd/even position in the table.  */

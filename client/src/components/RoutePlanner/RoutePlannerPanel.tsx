@@ -472,7 +472,7 @@ function SortableRow({ item, task, listPos, isRunMode, onRemove }: SortableRowPr
       <td
         className={[
           'px-2 py-1.5 text-wiki-text dark:text-wiki-text-dark align-middle',
-          reqIsNa ? 'req-na-cell' : '',
+          reqIsNa && !task.completed ? 'req-na-cell' : '',
         ].join(' ')}
       >
         <div onPointerDown={(e) => { if (e.target instanceof HTMLAnchorElement) e.stopPropagation(); }}>
@@ -845,7 +845,7 @@ function SectionHeaderRow({ section, itemCount, taskMap, isRunMode, onRename, on
     <tr id={`route-section-${section.id}`}>
       <td
         colSpan={7}
-        className="px-3 py-1 bg-wiki-mid dark:bg-wiki-mid-dark border-y border-wiki-border dark:border-wiki-border-dark select-none"
+        className="px-3 py-3 bg-wiki-mid dark:bg-wiki-mid-dark border-y border-[#706050] dark:border-[#455270] select-none"
       >
         {editing ? (
           <div className="flex items-center gap-1.5">
@@ -859,7 +859,7 @@ function SectionHeaderRow({ section, itemCount, taskMap, isRunMode, onRename, on
                 if (e.key === 'Escape') setEditing(false);
               }}
               maxLength={80}
-              className="flex-1 max-w-[220px] px-1.5 py-0.5 text-[12px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
+              className="flex-1 max-w-[220px] px-1.5 py-0.5 text-[13px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
             />
             <button
               onClick={commitRename}
@@ -876,24 +876,26 @@ function SectionHeaderRow({ section, itemCount, taskMap, isRunMode, onRename, on
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark">
-                {section.name}
-              </span>
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-0.5">
+                <span className="text-[14px] leading-none font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark">
+                  {section.name}
+                </span>
+                {!isRunMode && (
+                  <button
+                    onClick={() => setEditing(true)}
+                    title={`Rename section "${section.name}"`}
+                    aria-label={`Rename section "${section.name}"`}
+                    className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors"
+                  >
+                    <PencilIcon />
+                  </button>
+                )}
+              </div>
               {!confirmRemove && itemCount > 0 && (
-                <span className="ml-1 text-[11px] font-medium text-wiki-text/75 dark:text-wiki-text-dark/75 tabular-nums">
+                <span className="text-[13px] font-medium text-wiki-text/75 dark:text-wiki-text-dark/75 tabular-nums">
                   {itemCount} task{itemCount !== 1 ? 's' : ''} &middot; {sectionPoints} pts
                 </span>
-              )}
-              {!isRunMode && (
-                <button
-                  onClick={() => setEditing(true)}
-                  title={`Rename section "${section.name}"`}
-                  aria-label={`Rename section "${section.name}"`}
-                  className="flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors"
-                >
-                  <PencilIcon />
-                </button>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -1535,7 +1537,7 @@ function MobileRouteSection({
   return (
     <div id={`route-section-${section.id}`} className="mb-3">
       {/* Section header */}
-      <div className="px-2.5 py-1.5 bg-wiki-mid dark:bg-wiki-mid-dark border border-wiki-border dark:border-wiki-border-dark rounded-sm mb-2">
+      <div className="px-2.5 py-3 bg-wiki-mid dark:bg-wiki-mid-dark border border-[#706050] dark:border-[#455270] rounded-sm mb-2">
         {editing ? (
           <div className="flex items-center gap-1.5">
             <input
@@ -1548,7 +1550,7 @@ function MobileRouteSection({
                 if (e.key === 'Escape') setEditing(false);
               }}
               maxLength={80}
-              className="flex-1 px-1.5 py-0.5 text-[12px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
+              className="flex-1 px-1.5 py-0.5 text-[13px] font-semibold bg-wiki-bg dark:bg-wiki-bg-dark border border-wiki-link dark:border-wiki-link-dark text-wiki-text dark:text-wiki-text-dark focus:outline-none"
             />
             <button onClick={commitRename}
               className="px-1.5 py-0.5 text-[11px] font-medium text-white bg-wiki-link dark:bg-wiki-link-dark hover:opacity-80 transition-opacity flex-shrink-0">
@@ -1561,20 +1563,22 @@ function MobileRouteSection({
           </div>
         ) : (
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span className="text-[12px] font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark truncate">
-                {section.name}
-              </span>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-0.5 min-w-0">
+                <span className="text-[14px] leading-none font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark truncate">
+                  {section.name}
+                </span>
+                {!isRunMode && (
+                  <button onClick={() => setEditing(true)} title={`Rename "${section.name}"`}
+                    className="flex-shrink-0 flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors">
+                    <PencilIcon />
+                  </button>
+                )}
+              </div>
               {!confirmRemove && (
-                <span className="flex-shrink-0 text-[11px] text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
+                <span className="flex-shrink-0 text-[13px] text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
                   {section.items.length} task{section.items.length !== 1 ? 's' : ''} · {sectionPoints} pts
                 </span>
-              )}
-              {!isRunMode && (
-                <button onClick={() => setEditing(true)} title={`Rename "${section.name}"`}
-                  className="flex-shrink-0 flex items-center justify-center p-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors">
-                  <PencilIcon />
-                </button>
               )}
             </div>
             {!isRunMode && (
@@ -2397,7 +2401,7 @@ export function RoutePlannerPanel({
         <button
           type="button"
           onClick={() => {
-            const el = document.getElementById('available-tasks');
+            const el = document.getElementById('task-list');
             if (!el) return;
             const appStickyBottom = getAppStickyBottom();
             const elementTop = window.scrollY + el.getBoundingClientRect().top;
@@ -2405,7 +2409,7 @@ export function RoutePlannerPanel({
           }}
           className="ml-auto text-[12px] font-medium text-wiki-link dark:text-wiki-link-dark hover:underline whitespace-nowrap flex-shrink-0"
         >
-          ↓ Jump to Available Tasks
+          ↓ Jump to Task List
         </button>
       </div>
 
@@ -2507,7 +2511,7 @@ export function RoutePlannerPanel({
         <div className="bg-wiki-article dark:bg-wiki-article-dark px-3 py-5 text-center text-wiki-muted dark:text-wiki-muted-dark italic">
           No tasks yet —{' '}
           <span className="not-italic font-semibold text-wiki-link dark:text-wiki-link-dark">
-            use the + button
+            click any task
           </span>{' '}
           in the task list below, or{' '}
           <button
@@ -2557,7 +2561,7 @@ export function RoutePlannerPanel({
           </div>
         ) : (
           /* Desktop/tablet: table layout */
-          <div className="w-full relative overflow-x-auto">
+          <div className="w-full relative">
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -2573,7 +2577,7 @@ export function RoutePlannerPanel({
                     <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Task</th>
                     <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-left cursor-default">Requirements</th>
                     <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-20 cursor-default">Pts</th>
-                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default">Act</th>
+                    <th style={{ top: 'var(--sticky-offset, 0px)' }} className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark px-2 py-2 font-semibold text-center w-16 cursor-default"></th>
                   </tr>
                 </thead>
                 <SortableContext

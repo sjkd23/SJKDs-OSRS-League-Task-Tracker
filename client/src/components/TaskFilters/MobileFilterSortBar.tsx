@@ -2,6 +2,7 @@ import { memo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { AppTask, TaskFilters, SortConfig, SortField } from '@/types/task';
 import { TaskFiltersBar } from './TaskFiltersBar';
+import type { RouteTaskListVisibilityFilters } from './TaskFiltersBar';
 import { TaskSummary } from '@/components/TaskSummary/TaskSummary';
 import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
@@ -14,6 +15,8 @@ interface MobileFilterSortBarProps {
   onSortChange: (field: SortField) => void;
   mode?: 'tracker' | 'planner';
   activeCount: number;
+  routeTaskListVisibility?: RouteTaskListVisibilityFilters;
+  onRouteTaskListVisibilityChange?: (filters: RouteTaskListVisibilityFilters) => void;
   onImport: (completedIds: string[], todoIds: string[]) => boolean;
   canRevert: boolean;
   onRevert: () => void;
@@ -38,6 +41,8 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
   onSortChange,
   mode = 'tracker',
   activeCount,
+  routeTaskListVisibility,
+  onRouteTaskListVisibilityChange,
   onImport,
   canRevert,
   onRevert,
@@ -124,7 +129,14 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
             />
           )}
         </div>
-        <TaskFiltersBar tasks={tasks} filters={filters} onChange={onFiltersChange} mode={mode} />
+        <TaskFiltersBar
+          tasks={tasks}
+          filters={filters}
+          onChange={onFiltersChange}
+          mode={mode}
+          routeTaskListVisibility={routeTaskListVisibility}
+          onRouteTaskListVisibilityChange={onRouteTaskListVisibilityChange}
+        />
         {/* â”€â”€ Import section â€” tracker mode only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {mode !== 'planner' && (
         <div className="mt-5 pt-4 border-t border-wiki-border dark:border-wiki-border-dark">

@@ -11,19 +11,41 @@ const TIERS: Tier[] = ['Easy', 'Medium', 'Hard', 'Elite', 'Master'];
 // Muted accent for skill badge fallbacks
 const SKILL_FALLBACK_COLOUR = '#5a7a9a';
 
+export interface RouteTaskListVisibilityFilters {
+  showTasksInRoute: boolean;
+  showOnlyTasksInRoute: boolean;
+}
+
 interface TaskFiltersBarProps {
   tasks: AppTask[];
   filters: TaskFilters;
   onChange: (filters: TaskFilters) => void;
   mode?: 'tracker' | 'planner';
+  routeTaskListVisibility?: RouteTaskListVisibilityFilters;
+  onRouteTaskListVisibilityChange?: (filters: RouteTaskListVisibilityFilters) => void;
 }
 
-export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onChange, mode = 'tracker' }: TaskFiltersBarProps) {
+export const TaskFiltersBar = memo(function TaskFiltersBar({
+  tasks,
+  filters,
+  onChange,
+  mode = 'tracker',
+  routeTaskListVisibility,
+  onRouteTaskListVisibilityChange,
+}: TaskFiltersBarProps) {
   const areas = useMemo(() => uniqueAreas(tasks), [tasks]);
   const skills = useMemo(() => uniqueSkillsFromRequirements(tasks), [tasks]);
 
   function set<K extends keyof TaskFilters>(key: K, value: TaskFilters[K]) {
     onChange({ ...filters, [key]: value });
+  }
+
+  function setRouteTaskListVisibility<K extends keyof RouteTaskListVisibilityFilters>(
+    key: K,
+    value: RouteTaskListVisibilityFilters[K],
+  ) {
+    if (!routeTaskListVisibility || !onRouteTaskListVisibilityChange) return;
+    onRouteTaskListVisibilityChange({ ...routeTaskListVisibility, [key]: value });
   }
 
   function reset() {
@@ -211,6 +233,40 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({ tasks, filters, onC
             />
             Show only completed
             </label>
+
+            {mode === 'planner' && routeTaskListVisibility && (
+              <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+                <input
+                  type="checkbox"
+                  checked={routeTaskListVisibility.showTasksInRoute}
+                  disabled={routeTaskListVisibility.showOnlyTasksInRoute}
+                  onChange={(e) => setRouteTaskListVisibility('showTasksInRoute', e.target.checked)}
+                  className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <span className={routeTaskListVisibility.showOnlyTasksInRoute ? 'opacity-50' : ''}>Show tasks in route</span>
+              </label>
+            )}
+
+            {mode === 'planner' && routeTaskListVisibility && (
+              <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+                <input
+                  type="checkbox"
+                  checked={routeTaskListVisibility.showOnlyTasksInRoute}
+                  onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    if (!onRouteTaskListVisibilityChange || !routeTaskListVisibility) return;
+                    onRouteTaskListVisibilityChange({
+                      ...routeTaskListVisibility,
+                      showOnlyTasksInRoute: isChecked,
+                      // Keep the state coherent when "only" mode is enabled.
+                      showTasksInRoute: isChecked ? true : routeTaskListVisibility.showTasksInRoute,
+                    });
+                  }}
+                  className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
+                />
+                Show only tasks in route
+              </label>
+            )}
 
             {mode === 'planner' && (
               <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">

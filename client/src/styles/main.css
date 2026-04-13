@@ -376,56 +376,6 @@ html.scroll-lock, body.scroll-lock {
   border-top-color: #596e96;
 }
 
-/* ── OSRS static location labels ─────────────────────────────────────── */
-.leaflet-marker-icon.osrs-map-location-label-marker {
-  background: transparent;
-  border: none;
-}
-
-.osrs-map-location-label-text {
-  display: inline-block;
-  transform: translate(-50%, -50%);
-  white-space: nowrap;
-  pointer-events: none;
-  user-select: none;
-  color: #2f220f;
-  text-shadow:
-    0 1px 0 rgba(247, 237, 210, 0.95),
-    1px 0 0 rgba(247, 237, 210, 0.95),
-    -1px 0 0 rgba(247, 237, 210, 0.95),
-    0 -1px 0 rgba(247, 237, 210, 0.95),
-    0 0 4px rgba(0, 0, 0, 0.28);
-}
-
-.osrs-map-location-label-text--major {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.osrs-map-location-label-text--minor {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.osrs-map-location-label-text--micro {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.dark .osrs-map-location-label-text {
-  color: #f0dfad;
-  text-shadow:
-    0 1px 0 rgba(4, 7, 12, 0.85),
-    1px 0 0 rgba(4, 7, 12, 0.85),
-    -1px 0 0 rgba(4, 7, 12, 0.85),
-    0 -1px 0 rgba(4, 7, 12, 0.85),
-    0 0 5px rgba(0, 0, 0, 0.6);
-}
-
 /* ── Map-focused main planner row highlight ───────────────────────────── */
 /* Applied via DOM class when marker/map-list selection changes.          */
 [data-route-item-id].route-item-map-focused {

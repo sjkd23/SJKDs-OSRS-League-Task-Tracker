@@ -13,6 +13,7 @@ import { ThemeToggle } from '@/components/ThemeToggle/ThemeToggle';
 import { ImportButton } from '@/components/ImportButton/ImportButton';
 import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
+import type { RouteTaskListVisibilityFilters } from '@/components/TaskFilters/TaskFiltersBar';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { getShareParam, decodeSharedRoute, clearShareParam, isShortShareId, loadSharedRouteFromApi } from '@/utils/routeShare';
 import { loadFromStorage, saveToStorage } from '@/utils/storage';
@@ -49,6 +50,10 @@ export default function App() {
   const [plannerWide, setPlannerWide] = useState(() =>
     loadFromStorage<boolean>('osrs-lt:planner-wide', false),
   );
+  const [routeTaskListVisibility, setRouteTaskListVisibility] = useState<RouteTaskListVisibilityFilters>({
+    showTasksInRoute: true,
+    showOnlyTasksInRoute: false,
+  });
   const togglePlannerWide = useCallback(() => {
     setPlannerWide((w) => {
       const next = !w;
@@ -171,10 +176,19 @@ export default function App() {
     (filters.searchQuery.trim() ? 1 : 0),
   [filters]);
 
-  // In planner mode all visible tasks are shown — tasks already in the route remain
-  // visible with a yellow "in route" indicator rather than being removed from the list.
-  // taskIdsInRoute is forwarded to the table/card components for per-row state styling.
-  const displayTasks = visibleTasks;
+  // Lower Route Planner task-list visibility controls for route membership.
+  // This layer is planner-only and runs after the shared task filters.
+  const plannerDisplayTasks = useMemo(() => {
+    return visibleTasks.filter((task) => {
+      const isInRoute = taskIdsInRoute.has(task.id);
+      if (routeTaskListVisibility.showOnlyTasksInRoute) return isInRoute;
+      if (!routeTaskListVisibility.showTasksInRoute && isInRoute) return false;
+      return true;
+    });
+  }, [visibleTasks, taskIdsInRoute, routeTaskListVisibility]);
+
+  // taskIdsInRoute is forwarded to the table/card components for yellow planner-row state styling.
+  const displayTasks = appMode === 'planner' ? plannerDisplayTasks : visibleTasks;
 
   /**
    * Scroll-preserving wrapper for addTaskToRoute used by the lower task list in
@@ -312,7 +326,14 @@ export default function App() {
             <div className="wiki-filter-strip">
               <div className="flex flex-col lg:flex-row lg:items-start">
                 <div className="flex-1 min-w-0 lg:pr-4">
-                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} mode={appMode} />
+                  <TaskFiltersBar
+                    tasks={tasks}
+                    filters={filters}
+                    onChange={setFilters}
+                    mode={appMode}
+                    routeTaskListVisibility={routeTaskListVisibility}
+                    onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
+                  />
                 </div>
                 {appMode !== 'planner' && (
                 <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">
@@ -470,6 +491,8 @@ export default function App() {
                 onSortChange={handleSortChange}
                 mode={appMode}
                 activeCount={activeFilterCount}
+                routeTaskListVisibility={routeTaskListVisibility}
+                onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
                 onImport={handleImportForButton}
                 canRevert={canRevert}
                 onRevert={handleRevert}
@@ -490,7 +513,14 @@ export default function App() {
             <div className="wiki-filter-strip">
               <div className="flex flex-col lg:flex-row lg:items-start">
                 <div className="flex-1 min-w-0 lg:pr-4">
-                  <TaskFiltersBar tasks={tasks} filters={filters} onChange={setFilters} mode={appMode} />
+                  <TaskFiltersBar
+                    tasks={tasks}
+                    filters={filters}
+                    onChange={setFilters}
+                    mode={appMode}
+                    routeTaskListVisibility={routeTaskListVisibility}
+                    onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
+                  />
                 </div>
                 {appMode !== 'planner' && (
                 <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">

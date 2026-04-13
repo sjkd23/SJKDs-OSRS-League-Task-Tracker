@@ -1,8 +1,8 @@
 /**
  * RouteMapPanel — read-only Leaflet map for the Route Planner.
  *
- * Displays markers at explicit RouteItem locations, supports plane selection,
- * fit-to-route, and bidirectional list↔marker sync via focusedItemId.
+ * Displays markers at explicit RouteItem locations on a surface-only map,
+ * supports fit-to-route, and bidirectional list↔marker sync via focusedItemId.
  *
  * Design:
  *   - Desktop: 380px fixed height, collapsible via parent toggle
@@ -20,7 +20,7 @@
  *   effects no-op, and when the init effect creates a fresh map the tile and
  *   marker effects automatically re-run.
  */
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import L from 'leaflet';
 import type { RouteLocation } from '@/types/route';
 import {
@@ -32,14 +32,6 @@ import {
   OSRS_MAX_ZOOM,
   OSRS_MIN_ZOOM,
 } from './map/osrsCoords';
-import { MAP_LOCATION_LABELS } from './map/locationLabels';
-
-const PLANE_OPTIONS = [
-  { plane: 0, shortLabel: 'Ground', longLabel: 'Ground floor' },
-  { plane: 1, shortLabel: '1', longLabel: 'Floor 1' },
-  { plane: 2, shortLabel: '2', longLabel: 'Floor 2' },
-  { plane: 3, shortLabel: '3', longLabel: 'Floor 3' },
-] as const;
 
 // ─── View model ───────────────────────────────────────────────────────────────
 
@@ -183,68 +175,9 @@ export function RouteMapPanel({
    */
   const [map, setMap] = useState<L.Map | null>(null);
 
-  const [plane, setPlane]           = useState(0);
   const [fitTrigger, setFitTrigger] = useState(0);
-  const [labelsVisible, setLabelsVisible] = useState(true);
-  const planeButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  // Which planes have markers (for plane selector UX)
-  const planesWithMarkers = useMemo(
-    () => new Set(markers.map((m) => m.location.plane)),
-    [markers],
-  );
-
-  const markerPlaneList = useMemo(
-    () => [...planesWithMarkers].sort((left, right) => left - right),
-    [planesWithMarkers],
-  );
-
-  const showPlaneSelector = isPlacementMode || markerPlaneList.length > 1;
-
-  const planeCounts = useMemo(() => {
-    const counts = new Map<number, number>();
-    markers.forEach((marker) => {
-      counts.set(marker.location.plane, (counts.get(marker.location.plane) ?? 0) + 1);
-    });
-    return counts;
-  }, [markers]);
-
-  const activePlaneOption = PLANE_OPTIONS.find((option) => option.plane === plane) ?? PLANE_OPTIONS[0];
-
-  // Markers visible on the current plane
-  const planeMarkers = useMemo(
-    () => markers.filter((m) => m.location.plane === plane),
-    [markers, plane],
-  );
 
   const hasAnyMarkers = markers.length > 0;
-
-  const selectPlane = useCallback((nextPlane: number) => {
-    setPlane(nextPlane);
-  }, []);
-
-  const handlePlaneKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {
-    const currentIndex = PLANE_OPTIONS.findIndex((option) => option.plane === plane);
-    if (currentIndex === -1) return;
-
-    let nextIndex = currentIndex;
-    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
-      nextIndex = (currentIndex + 1) % PLANE_OPTIONS.length;
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
-      nextIndex = (currentIndex - 1 + PLANE_OPTIONS.length) % PLANE_OPTIONS.length;
-    } else if (event.key === 'Home') {
-      nextIndex = 0;
-    } else if (event.key === 'End') {
-      nextIndex = PLANE_OPTIONS.length - 1;
-    } else {
-      return;
-    }
-
-    event.preventDefault();
-    const nextPlane = PLANE_OPTIONS[nextIndex].plane;
-    selectPlane(nextPlane);
-    planeButtonRefs.current[nextIndex]?.focus();
-  }, [plane, selectPlane]);
 
   // ── Init / teardown Leaflet map ─────────────────────────────────────────────
   useEffect(() => {
@@ -259,14 +192,6 @@ export function RouteMapPanel({
       zoomControl:      false,
       attributionControl: false,
     });
-
-    // Keep labels below pins and controls, and non-interactive.
-    m.createPane('locationLabels');
-    const labelPane = m.getPane('locationLabels');
-    if (labelPane) {
-      labelPane.style.zIndex = '550';
-      labelPane.style.pointerEvents = 'none';
-    }
 
     setMap(m);
 
@@ -302,21 +227,7 @@ export function RouteMapPanel({
     return () => cancelAnimationFrame(raf);
   }, [map, containerHeight]);
 
-  // When the selector is hidden, keep the map on the route's only relevant plane.
-  useEffect(() => {
-    if (isPlacementMode) return;
-
-    if (!hasAnyMarkers) {
-      if (plane !== 0) setPlane(0);
-      return;
-    }
-
-    if (markerPlaneList.length === 1 && plane !== markerPlaneList[0]) {
-      setPlane(markerPlaneList[0]);
-    }
-  }, [hasAnyMarkers, isPlacementMode, markerPlaneList, plane]);
-
-  // ── Tile layer (re-applied when map instance or plane changes) ──────────────
+  // ── Tile layer (surface-only) ───────────────────────────────────────────────
   const tileLayerRef = useRef<L.TileLayer | null>(null);
 
   useEffect(() => {
@@ -328,7 +239,7 @@ export function RouteMapPanel({
       tileLayerRef.current = null;
     }
 
-    const layer = L.tileLayer(osrsTileUrl(plane), {
+    const layer = L.tileLayer(osrsTileUrl(0), {
       tms:     true,
       minZoom: OSRS_MIN_ZOOM,
       maxZoom: OSRS_MAX_ZOOM,
@@ -341,68 +252,7 @@ export function RouteMapPanel({
     });
     layer.addTo(map);
     tileLayerRef.current = layer;
-  }, [map, plane]);
-
-  // ── Static location labels (zoom-aware decluttering) ─────────────────────
-  const labelLayerRef = useRef<L.LayerGroup | null>(null);
-
-  useEffect(() => {
-    if (!map) return;
-
-    if (labelLayerRef.current) {
-      map.removeLayer(labelLayerRef.current);
-      labelLayerRef.current = null;
-    }
-
-    if (!labelsVisible) return;
-
-    const layer = L.layerGroup();
-
-    const renderLabels = () => {
-      layer.clearLayers();
-
-      const zoom = map.getZoom();
-      const visible = MAP_LOCATION_LABELS.filter((label) => {
-        if (label.plane !== plane) return false;
-        if (zoom < label.minZoom) return false;
-        if (label.maxZoom !== undefined && zoom > label.maxZoom) return false;
-        return true;
-      });
-
-      visible.forEach((label) => {
-        const pos = osrsToLatLng(map, label.x, label.y);
-        const icon = L.divIcon({
-          className: 'osrs-map-location-label-marker',
-          html:
-            `<span class="osrs-map-location-label-text osrs-map-location-label-text--${label.tier}">` +
-            `${escapeHtml(label.name)}</span>`,
-          iconSize: [0, 0],
-          iconAnchor: [0, 0],
-        });
-
-        L.marker(pos, {
-          icon,
-          interactive: false,
-          keyboard: false,
-          pane: 'locationLabels',
-          zIndexOffset: 200,
-        }).addTo(layer);
-      });
-    };
-
-    layer.addTo(map);
-    labelLayerRef.current = layer;
-    renderLabels();
-
-    map.on('zoomend', renderLabels);
-    return () => {
-      map.off('zoomend', renderLabels);
-      if (labelLayerRef.current) {
-        map.removeLayer(labelLayerRef.current);
-        labelLayerRef.current = null;
-      }
-    };
-  }, [map, plane, labelsVisible]);
+  }, [map]);
 
   // ── Markers (re-applied when map, visible markers, or selection changes) ────
   const leafletMarkersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -421,8 +271,8 @@ export function RouteMapPanel({
     leafletMarkersRef.current.forEach((lm) => map.removeLayer(lm));
     leafletMarkersRef.current.clear();
 
-    // Add markers for the current plane.
-    planeMarkers.forEach((m) => {
+    // Add markers from all route items with explicit coordinates.
+    markers.forEach((m) => {
       const pos  = osrsToLatLng(map, m.location.x, m.location.y);
       const icon = makeMarkerIcon(
         m.listPos,
@@ -445,7 +295,7 @@ export function RouteMapPanel({
       marker.addTo(map);
       leafletMarkersRef.current.set(m.routeItemId, marker);
     });
-  }, [map, planeMarkers, focusedItemId, stableOnMarkerClick]);
+  }, [map, markers, focusedItemId, stableOnMarkerClick]);
 
   // ── Placement clicks (map surface) ───────────────────────────────────────
   useEffect(() => {
@@ -453,14 +303,14 @@ export function RouteMapPanel({
 
     const handleClick = (e: L.LeafletMouseEvent) => {
       const { x, y } = latLngToOsrs(map, e.latlng);
-      onMapClick({ x, y, plane });
+      onMapClick({ x, y, plane: 0 });
     };
 
     map.on('click', handleClick);
     return () => {
       map.off('click', handleClick);
     };
-  }, [map, onMapClick, plane]);
+  }, [map, onMapClick]);
 
   // ── Cursor hint for placement mode ───────────────────────────────────────
   useEffect(() => {
@@ -472,7 +322,7 @@ export function RouteMapPanel({
     };
   }, [map, isPlacementMode]);
 
-  // ── Fly to focused marker (auto-switch plane when needed) ───────────────────
+  // ── Fly to focused marker ───────────────────────────────────────────────────
   const allMarkersRef = useRef(markers);
   allMarkersRef.current = markers;
 
@@ -482,30 +332,27 @@ export function RouteMapPanel({
     const target = allMarkersRef.current.find((x) => x.routeItemId === focusedItemId);
     if (!target) return;
 
-    // Auto-switch plane if the focused item is on a different plane.
-    setPlane(target.location.plane);
-
     const pos = osrsToLatLng(map, target.location.x, target.location.y);
     map.flyTo(pos, Math.max(map.getZoom(), 8), { duration: 0.7 });
   }, [map, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Fit view to current-plane markers ──────────────────────────────────────
-  const planeMarkersRef = useRef(planeMarkers);
-  planeMarkersRef.current = planeMarkers;
+  // ── Fit view to markers ────────────────────────────────────────────────────
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
 
   useEffect(() => {
     if (!map || fitTrigger === 0) return;
 
-    const pm = planeMarkersRef.current;
-    if (pm.length === 0) return;
+    const visibleMarkers = markersRef.current;
+    if (visibleMarkers.length === 0) return;
 
-    if (pm.length === 1) {
-      const pos = osrsToLatLng(map, pm[0].location.x, pm[0].location.y);
+    if (visibleMarkers.length === 1) {
+      const pos = osrsToLatLng(map, visibleMarkers[0].location.x, visibleMarkers[0].location.y);
       map.flyTo(pos, 9, { duration: 0.7 });
       return;
     }
 
-    const latlngs = pm.map((m) => osrsToLatLng(map, m.location.x, m.location.y));
+    const latlngs = visibleMarkers.map((m) => osrsToLatLng(map, m.location.x, m.location.y));
     map.fitBounds(L.latLngBounds(latlngs), { padding: [50, 50], maxZoom: 9 });
   }, [map, fitTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -517,94 +364,12 @@ export function RouteMapPanel({
       {/* Leaflet map mounts here — explicit pixel height so Leaflet reads correct size */}
       <div ref={containerRef} style={{ height: '100%', width: '100%' }} />
 
-      {/* ── Overlay: floor selector (top-left when helpful) ───────────────── */}
-      {showPlaneSelector && (
-        <div className="absolute top-2 left-2 z-[1000] pointer-events-auto max-w-[calc(100%-1rem)] sm:max-w-[18rem]">
-          <div className="min-w-[9.75rem] border border-wiki-border dark:border-wiki-border-dark bg-wiki-surface/95 dark:bg-wiki-surface-dark/95 shadow-sm backdrop-blur-[1px]">
-            <div className="flex items-center justify-between gap-2 border-b border-wiki-border/80 dark:border-wiki-border-dark/80 px-2.5 py-1.5">
-              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-wiki-muted dark:text-wiki-muted-dark">
-                Floor
-              </span>
-              <span className="text-[10px] font-semibold text-wiki-text dark:text-wiki-text-dark">
-                {isPlacementMode ? `Placing on ${activePlaneOption.shortLabel}` : activePlaneOption.shortLabel}
-              </span>
-            </div>
-            <div
-              className="grid grid-cols-4 gap-px bg-wiki-border/70 dark:bg-wiki-border-dark/70 p-px"
-              role="group"
-              aria-label="Map floor selector"
-            >
-              {PLANE_OPTIONS.map((option, index) => {
-                const hasMarkersOnPlane = planesWithMarkers.has(option.plane);
-                const isActive = plane === option.plane;
-                const markerCount = planeCounts.get(option.plane) ?? 0;
-
-                return (
-                  <button
-                    key={option.plane}
-                    ref={(button) => {
-                      planeButtonRefs.current[index] = button;
-                    }}
-                    type="button"
-                    onClick={() => selectPlane(option.plane)}
-                    onKeyDown={handlePlaneKeyDown}
-                    title={
-                      markerCount > 0
-                        ? `${option.longLabel} · ${markerCount} marker${markerCount === 1 ? '' : 's'}`
-                        : option.longLabel
-                    }
-                    aria-pressed={isActive}
-                    aria-label={
-                      markerCount > 0
-                        ? `Show ${option.longLabel}. ${markerCount} route marker${markerCount === 1 ? '' : 's'} on this floor.`
-                        : `Show ${option.longLabel}`
-                    }
-                    className={[
-                      'relative flex min-h-[2.25rem] items-center justify-center px-2 text-[11px] font-bold leading-none transition-colors cursor-pointer focus:outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-wiki-link dark:focus-visible:ring-wiki-link-dark focus-visible:ring-inset',
-                      isActive
-                        ? 'bg-wiki-link dark:bg-wiki-link-dark text-white'
-                        : hasMarkersOnPlane
-                        ? 'bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-text dark:text-wiki-text-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark'
-                        : 'bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-muted dark:text-wiki-muted-dark hover:bg-wiki-mid/70 dark:hover:bg-wiki-mid-dark/70',
-                    ].join(' ')}
-                  >
-                    <span>{option.shortLabel}</span>
-                    {hasMarkersOnPlane && (
-                      <span
-                        aria-hidden="true"
-                        className={[
-                          'absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full',
-                          isActive ? 'bg-white/90' : 'bg-[#c8940c] dark:bg-[#d4ac3a]',
-                        ].join(' ')}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            {isPlacementMode && (
-              <p className="px-2.5 py-1.5 text-[10px] leading-snug text-wiki-muted dark:text-wiki-muted-dark border-t border-wiki-border/70 dark:border-wiki-border-dark/70">
-                New pin placements use the selected floor.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Overlay: fit + attribution (bottom-right) ──────────────────────── */}
       <div className="absolute bottom-2 right-2 z-[1000] flex flex-col items-end gap-1 pointer-events-auto">
-        <button
-          onClick={() => setLabelsVisible((v) => !v)}
-          title={labelsVisible ? 'Hide map labels' : 'Show map labels'}
-          aria-pressed={labelsVisible}
-          className="px-2 py-1 text-[10px] font-semibold border shadow-sm bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-text dark:text-wiki-text-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors"
-        >
-          Labels: {labelsVisible ? 'On' : 'Off'}
-        </button>
         {hasAnyMarkers && (
           <button
             onClick={() => setFitTrigger((t) => t + 1)}
-            title="Fit view to markers on this plane"
+            title="Fit view to route markers"
             className="px-2 py-1 text-[10px] font-semibold border shadow-sm bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-text dark:text-wiki-text-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors"
           >
             Fit
@@ -626,14 +391,6 @@ export function RouteMapPanel({
         </div>
       )}
 
-      {/* ── Notice: markers exist but none on current plane ─────────────────── */}
-      {hasAnyMarkers && planeMarkers.length === 0 && (
-        <div className="absolute inset-0 flex items-end justify-center pb-4 z-[999] pointer-events-none">
-          <div className="bg-wiki-surface/90 dark:bg-wiki-surface-dark/90 border border-wiki-border dark:border-wiki-border-dark px-3 py-1.5 text-[11px] text-wiki-muted dark:text-wiki-muted-dark shadow-sm">
-            No markers on plane {plane}.
-          </div>
-        </div>
-      )}
     </div>
   );
 }

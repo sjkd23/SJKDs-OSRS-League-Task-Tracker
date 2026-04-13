@@ -6,6 +6,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -38,6 +39,8 @@ import { createShareLink } from '@/utils/routeShare';
 import { buildPluginExportPayload, parsePluginRoute, isNaReqs } from '@/utils/routePluginFormat';
 import { RouteMapPanel, type MarkerViewModel } from './RouteMapPanel';
 import { MapRouteList } from './MapRouteList';
+import { SpreadsheetImportModal } from './SpreadsheetImportModal';
+import { downloadRouteCsv } from '@/utils/spreadsheetExport';
 
 // ─── Drag modifier ─────────────────────────────────────────────────────────────
 
@@ -176,6 +179,7 @@ interface RoutePlannerPanelProps {
   onRenameSection: (sectionId: string, name: string) => void;
   onRemoveSection: (sectionId: string) => void;
   onSetRouteItemLocation: (routeItemId: string, location: RouteLocation | null) => void;
+  onMoveItem: (routeItemId: string, destSectionId: string, destIndex: number) => void;
 }
 
 // ─── Sortable row (real task) ─────────────────────────────────────────────────
@@ -1087,6 +1091,55 @@ function AddCustomTaskRow({ onAdd, onCancel }: AddCustomTaskRowProps) {
 
 // ─── Table section (section header + its rows) ────────────────────────────────
 
+// ─── Empty section drop targets ───────────────────────────────────────────────
+
+/**
+ * Rendered inside a <tbody> when a section has no items.
+ * Uses useDroppable so dnd-kit's collision detection can find it when the
+ * user drags a task over an otherwise empty section.
+ */
+function TableEmptySectionDropTarget({ sectionId }: { sectionId: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: sectionId });
+  return (
+    <tr ref={setNodeRef}>
+      <td
+        colSpan={7}
+        className={[
+          'px-3 py-5 text-center text-[12px] border border-dashed transition-colors',
+          isOver
+            ? 'border-wiki-link dark:border-wiki-link-dark bg-wiki-link/5 dark:bg-wiki-link-dark/5 text-wiki-link dark:text-wiki-link-dark'
+            : 'border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark',
+        ].join(' ')}
+      >
+        Drop a task here
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * Rendered inside a mobile section when it has no items.
+ * Uses useDroppable for the same reason as the table variant.
+ */
+function MobileEmptySectionDropTarget({ sectionId }: { sectionId: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: sectionId });
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        'mb-2 py-5 text-center text-[12px] border border-dashed rounded-sm transition-colors',
+        isOver
+          ? 'border-wiki-link dark:border-wiki-link-dark bg-wiki-link/5 dark:bg-wiki-link-dark/5 text-wiki-link dark:text-wiki-link-dark'
+          : 'border-wiki-border dark:border-wiki-border-dark text-wiki-muted dark:text-wiki-muted-dark',
+      ].join(' ')}
+    >
+      Drop a task here
+    </div>
+  );
+}
+
+// ─── Table section (section header + its rows) ────────────────────────────────
+
 interface TableSectionProps {
   section: RouteSection;
   itemIndexMap: Map<string, number>;
@@ -1193,6 +1246,11 @@ function TableSection({
           />
         );
       })}
+
+      {/* Empty section drop target — visible when no items exist */}
+      {!isRunMode && !isDraggingSection && section.items.length === 0 && (
+        <TableEmptySectionDropTarget sectionId={section.id} />
+      )}
 
       {!isRunMode && !isDraggingSection && (addingCustomToSection === section.id ? (
         <AddCustomTaskRow
@@ -1898,19 +1956,25 @@ function MobileRouteSection({
 
       {/* Add custom task */}
       {!isRunMode && !isDraggingSection && (
-        addingCustomToSection === section.id ? (
-          <MobileAddCustomForm
-            onAdd={(name) => onAddCustomConfirm(section.id, name)}
-            onCancel={() => setAddingCustomToSection(null)}
-          />
-        ) : (
-          <button
-            onClick={() => setAddingCustomToSection(section.id)}
-            className="w-full py-2 text-[12px] text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark border border-dashed border-wiki-border dark:border-wiki-border-dark hover:border-wiki-link dark:hover:border-wiki-link-dark bg-wiki-article dark:bg-wiki-article-dark transition-colors rounded-sm"
-          >
-            + Custom task
-          </button>
-        )
+        <>
+          {/* Empty section drop target — visible when no items exist */}
+          {section.items.length === 0 && (
+            <MobileEmptySectionDropTarget sectionId={section.id} />
+          )}
+          {addingCustomToSection === section.id ? (
+            <MobileAddCustomForm
+              onAdd={(name) => onAddCustomConfirm(section.id, name)}
+              onCancel={() => setAddingCustomToSection(null)}
+            />
+          ) : (
+            <button
+              onClick={() => setAddingCustomToSection(section.id)}
+              className="w-full py-2 text-[12px] text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark border border-dashed border-wiki-border dark:border-wiki-border-dark hover:border-wiki-link dark:hover:border-wiki-link-dark bg-wiki-article dark:bg-wiki-article-dark transition-colors rounded-sm"
+            >
+              + Custom task
+            </button>
+          )}
+        </>
       )}
     </div>
   );
@@ -1939,6 +2003,7 @@ export function RoutePlannerPanel({
   onRenameSection,
   onRemoveSection,
   onSetRouteItemLocation,
+  onMoveItem,
 }: RoutePlannerPanelProps) {
   const layoutMode = useLayoutMode();
 
@@ -2231,6 +2296,12 @@ export function RoutePlannerPanel({
     }
   }, [route, itemCount, allTasks]);
 
+  /** Download the current route as a CSV file for use in spreadsheets. */
+  const handleExportCsv = useCallback(() => {
+    if (itemCount === 0) return;
+    downloadRouteCsv(route, taskMap);
+  }, [route, taskMap, itemCount]);
+
   const handleShare = useCallback(async () => {
     setShareError(null);
     setShareFallbackUrl(null);
@@ -2267,6 +2338,9 @@ export function RoutePlannerPanel({
   const importHelpRef = useRef<HTMLDivElement>(null);
   const [mobileImportOpen, setMobileImportOpen] = useState(false);
   const [mobileImportText, setMobileImportText] = useState('');
+
+  // ── Spreadsheet import state ───────────────────────────────────────────────
+  const [spreadsheetImportOpen, setSpreadsheetImportOpen] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -2420,11 +2494,29 @@ export function RoutePlannerPanel({
       if (isRunMode) return;
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const oldIndex = allRouteItems.findIndex((i) => i.routeItemId === active.id);
-      const newIndex = allRouteItems.findIndex((i) => i.routeItemId === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) onReorderItems(oldIndex, newIndex);
+
+      const draggedId = active.id as string;
+      const overId = over.id as string;
+
+      // If the drop target is an empty section placeholder, insert at index 0.
+      const overSection = route.sections.find((s) => s.id === overId);
+      if (overSection) {
+        onMoveItem(draggedId, overSection.id, 0);
+        return;
+      }
+
+      // Otherwise find which section contains the hovered item and insert at
+      // that item's current index (arrayMove semantics for same-section,
+      // explicit insert-before for cross-section).
+      for (const section of route.sections) {
+        const destIndex = section.items.findIndex((i) => i.routeItemId === overId);
+        if (destIndex !== -1) {
+          onMoveItem(draggedId, section.id, destIndex);
+          return;
+        }
+      }
     },
-    [allRouteItems, onReorderItems, isRunMode],
+    [route.sections, onMoveItem, isRunMode],
   );
 
   // ── DnD setup (section reorder) ────────────────────────────────────────────
@@ -2658,6 +2750,30 @@ export function RoutePlannerPanel({
               </div>
             )}
           </div>
+          {/* Spreadsheet import button */}
+          <button
+            onClick={() => {
+              setSpreadsheetImportOpen((v) => !v);
+            }}
+            title="Import tasks from a spreadsheet or CSV file"
+            className={[
+              'px-2.5 py-1 text-[12px] font-medium border transition-colors flex-shrink-0',
+              spreadsheetImportOpen
+                ? 'bg-wiki-link dark:bg-wiki-link-dark text-white border-transparent'
+                : 'border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark',
+            ].join(' ')}
+          >
+            Spreadsheet
+          </button>
+          {/* CSV export — downloads a spreadsheet-friendly file */}
+          <button
+            onClick={handleExportCsv}
+            disabled={itemCount === 0}
+            title={itemCount === 0 ? 'Add tasks before exporting' : 'Download route as a CSV spreadsheet'}
+            className="px-2.5 py-1 text-[12px] font-medium border border-wiki-border dark:border-wiki-border-dark text-wiki-link dark:text-wiki-link-dark hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+          >
+            CSV
+          </button>
           {/* Export button with anchored status popup */}
           <div className="relative">
             <button
@@ -2771,6 +2887,16 @@ export function RoutePlannerPanel({
             </button>
           </div>
         </div>
+      )}
+
+      {/* ── Spreadsheet import panel ─────────────────────────────────────── */}
+      {spreadsheetImportOpen && (
+        <SpreadsheetImportModal
+          allTasks={allTasks}
+          existingRoute={route}
+          onReplaceRoute={onReplaceRoute}
+          onClose={() => setSpreadsheetImportOpen(false)}
+        />
       )}
 
       {/* ── Route name field ────────────────────────────────────────────── */}

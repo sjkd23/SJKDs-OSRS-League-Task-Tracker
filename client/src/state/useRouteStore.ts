@@ -185,6 +185,11 @@ export function useRouteStore() {
    * Reorder items using flat indices across all sections.
    * Supports cross-section drag-and-drop: items at section boundaries shift
    * to maintain each section's original item count.
+   *
+   * NOTE: This flat-index redistribution is semantically correct only for
+   * same-section reorders. For cross-section moves use `moveItem` instead.
+   * This function is kept for the map-list DnD panel which operates on a
+   * global flat list and expects flat-index semantics.
    */
   const reorderItems = useCallback((fromFlat: number, toFlat: number) => {
     setRoute((prev) => {
@@ -206,6 +211,71 @@ export function useRouteStore() {
       return next;
     });
   }, []);
+
+  /**
+   * Move a single route item to an explicit destination section + index.
+   *
+   * Handles three cases correctly:
+   *   1. Same-section reorder: remove then insert at destIndex (= arrayMove semantics).
+   *   2. Cross-section move: remove from source section, insert at destIndex in dest.
+   *   3. Empty-section drop: destIndex of 0 inserts as the first item.
+   *
+   * This is the correct DnD handler for the main route planner DnD context.
+   */
+  const moveItem = useCallback(
+    (routeItemId: string, destSectionId: string, destIndex: number) => {
+      setRoute((prev) => {
+        // Locate the item and its current section.
+        let movedItem: RouteItem | null = null;
+        let sourceSectionId: string | null = null;
+
+        for (const s of prev.sections) {
+          const idx = s.items.findIndex((i) => i.routeItemId === routeItemId);
+          if (idx !== -1) {
+            movedItem = s.items[idx];
+            sourceSectionId = s.id;
+            break;
+          }
+        }
+
+        if (!movedItem || !sourceSectionId) return prev;
+
+        if (sourceSectionId === destSectionId) {
+          // Same section: remove then splice at destIndex.
+          // This is equivalent to arrayMove for all orderings.
+          const sections = prev.sections.map((s) => {
+            if (s.id !== sourceSectionId) return s;
+            const items = [...s.items];
+            const fromIdx = items.findIndex((i) => i.routeItemId === routeItemId);
+            items.splice(fromIdx, 1);
+            items.splice(destIndex, 0, movedItem!);
+            return { ...s, items };
+          });
+          const next: Route = { ...prev, sections };
+          saveToStorage(ROUTE_STORAGE_KEY, next);
+          return next;
+        } else {
+          // Cross-section: remove from source, insert at destIndex in dest.
+          const captured = movedItem;
+          const sections = prev.sections.map((s) => {
+            if (s.id === sourceSectionId) {
+              return { ...s, items: s.items.filter((i) => i.routeItemId !== routeItemId) };
+            }
+            if (s.id === destSectionId) {
+              const items = [...s.items];
+              items.splice(destIndex, 0, captured);
+              return { ...s, items };
+            }
+            return s;
+          });
+          const next: Route = { ...prev, sections };
+          saveToStorage(ROUTE_STORAGE_KEY, next);
+          return next;
+        }
+      });
+    },
+    [],
+  );
 
   /** Add a custom task to a specific section. */
   const addCustomTask = useCallback((sectionId: string, name: string) => {
@@ -393,6 +463,7 @@ export function useRouteStore() {
     removeTaskFromRoute,
     moveTaskInRoute,
     reorderItems,
+    moveItem,
     reorderSections,
     resetRoute,
     updateRouteName,

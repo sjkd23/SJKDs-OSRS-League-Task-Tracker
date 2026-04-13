@@ -33,6 +33,7 @@ export default function App() {
   // ── Route Planner state (isolated from task tracker state) ────────────────
   const {
     route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
+    moveItem,
     reorderSections, resetRoute,
     updateRouteName, replaceRoute, addCustomTask, editCustomTask,
     addSection, renameSection, removeSection, setRouteItemLocation,
@@ -521,6 +522,7 @@ export default function App() {
               onRenameSection={renameSection}
               onRemoveSection={removeSection}
               onSetRouteItemLocation={setRouteItemLocation}
+              onMoveItem={moveItem}
             />
           </div>
         )}

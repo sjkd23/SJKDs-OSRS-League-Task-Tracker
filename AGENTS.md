@@ -16,8 +16,9 @@ This project should feel **wiki-first**, not like a generic dashboard app.
 ## Primary Tech Stack
 - **TypeScript**
 - **Tailwind CSS**
+- **Cloudflare Pages / Functions** (for route sharing via KV)
 
-Assume a modern TypeScript web app structure unless the repo clearly defines otherwise.
+Assume a modern TypeScript web app structure based on Cloudflare Pages/Vite unless otherwise specified.
 
 ## Product Priorities
 When making decisions, optimize for these in order:
@@ -67,22 +68,14 @@ Treat task data as a core domain model. Task records will likely need fields suc
 
 Design for future metadata expansion without making the first version overly abstract.
 
-## Feature Expectations
-### Current likely MVP
-- task list rendering
-- light/dark mode
-- filtering by skill, region, difficulty
-- combinations of filters
-- manual completion tracking
-- manual to-do / favourites list
-
-### Likely later features
-- automatic sync from wiki / RuneLite-related sources
-- relic tracking
-- region unlock tracking
-- richer wiki deep-linking
-
-Build current features so later sync support can be added without a rewrite.
+## Current State Reality
+When working in this repository, agents must understand the current implementation:
+- **Task Tracker:** Implemented. Users can filter by skill, region, and tier, and manually track tasks.
+- **Route Planner:** Implemented. Uses `@dnd-kit/core` for drag-and-drop planning and custom notes.
+- **Share API:** Implemented. Route Planner lists can be exported via a short link. 
+- **Backend:** The Share API depends entirely on **Cloudflare Pages Functions** (`client/functions/api/share`) and a **Cloudflare KV** namespace named `ROUTE_SHARES`. Everything else is a static React app mapping JSON files in `public/data`.
+- **Local Dev:** Use `npm run dev` for static/UI-only work. Use `npm run pages:dev` (which proxies Vite with Wrangler) to test the Share API locally.
+- **Speculative Features:** Do not treat the route planner or share API as "future" ideas. They exist.
 
 ## Persistence Guidance
 Assume user-specific state may eventually include:
@@ -90,9 +83,10 @@ Assume user-specific state may eventually include:
 - selected regions
 - selected relics
 - todo/favourite items
+- route planning/sharing
 - UI preferences
 
-Prefer simple persistence first. Do not build backend complexity unless the repo requirements justify it.
+Prefer simple persistence first. With the exception of Cloudflare KV for Route Sharing, do not build backend complexity. All personal data stays local.
 
 ## Code Style
 - Use strict, readable TypeScript

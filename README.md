@@ -2,7 +2,7 @@
 
 A sleek, custom task tracker built specifically for Old School RuneScape Leagues, currently tuned for **League 5: Raging Echoes**.
 
-We wanted a tracker that actually feels like the official OSRS Wiki—dense, familiar, and easy to read—but with all the quality-of-life features you need to plan your route, track your progress, and get things done without dealing with a clunky UI.
+We wanted a tracker that actually feels like the official OSRS Wiki-dense, familiar, and easy to read-but with all the quality-of-life features you need to plan your route, track your progress, and get things done without dealing with a clunky UI.
 
 ## What's Inside?
 
@@ -17,6 +17,7 @@ The app is fully functional and up-to-date with **Raging Echoes**. It runs entir
 - **Advanced Filtering & Sorting:** Narrow down your grind by Skill, Region, Tier (Difficulty), and Status (Completed/To-Do). Stack as many filters as you need.
 - **Completion & To-Do Tracking:** Manually check off completed tasks or flag them as "To-Do" to build your perfect route. 
 - **Auto-Saving:** Your progress, preferences, and lists are automatically saved locally in your browser. Close the tab, come back later, and pick up right where you left off.
+- **Route Sharing:** Share your planned routes with others using an auto-generated short link (powered by Cloudflare KV).
 - **Rich Task Descriptions:** We render actual OSRS Wiki icons and support parsed wikilinks directly inside task descriptions. 
 
 *(Note: Screenshots are coming soon to showcase the UI!)*
@@ -28,50 +29,62 @@ We kept it simple, modern, and snappy:
 - **TypeScript**
 - **Vite**
 - **Tailwind CSS**
+- **Cloudflare Pages & KV** (for route sharing)
 
 ## Quick Start
 
-Since this is an entirely client-side app, setting it up locally is a breeze. The current task dataset is statically bundled right into the "client/public/data" directory.
+The app consists of a static frontend built with Vite and an optional thin Cloudflare Functions backend used solely for route sharing. Setting it up locally is a breeze.
+
+1. Navigate to the `client` directory:
+   ```bash
+   cd client
+   ```
+2. Install the dependencies:
+   ```bash
+   npm install
+   ```
 
 ### Local Development
 
-1. Navigate to the "client" directory:
-   `ash
-   cd client
-   `
-2. Install the dependencies:
-   `ash
-   npm install
-   `
-3. Start the dev server:
-   `ash
-   npm run dev
-   `
-   The app will spin up at http://localhost:5173.
+The app can be run in two modes depending on what you're working on:
+
+#### 1. UI-Only / Static Mode
+For standard UI and tracker development (sharing features will be disabled):
+```bash
+npm run dev
+```
+
+#### 2. Share-Enabled Mode (Cloudflare Pages + KV)
+To automatically start Vite alongside a local KV wrapper for the Route Planner's `/api/share` endpoints:
+```bash
+npm run pages:dev
+```
+*(See [Docs: Contributing](docs/contributing.md) for more details.)*
 
 ### Build & Check
 
 To build the project for production:
-`ash
+````bash
 npm run build
-`
+```
 To preview that production build locally:
-`ash
+````bash
 npm run preview
-`
+```
 To run the linter:
-`ash
+````bash
 npm run lint
-`
+```
 
 ## Project Structure Overview
 
-- "client/public/data/" - Static JSON task datasets (like "LEAGUE_5.full.json").
-- "client/public/icons/" - Your favorite OSRS Wiki skill and area icons.
-- "client/src/components/" - React components chopped up by feature area (e.g., "TaskTable", "TaskFilters", "ImportButton").
-- "client/src/lib/" - League configurations and data mapping utilities.
-- "client/src/state/" - Core hooks handling state (e.g., "useTaskStore.ts"), bridging straight into local storage.
-- "client/src/utils/" - Shared logic for reading plugin exports, filtering, storage access, and rendering wiki content.
+- `client/public/data/` - Static JSON task datasets (like `LEAGUE_5.full.json`).
+- `client/public/icons/` - Your favorite OSRS Wiki skill and area icons.
+- `client/src/components/` - React components chopped up by feature area.
+- `client/src/lib/` - League configurations and data mapping utilities.
+- `client/src/state/` - Core hooks handling state, bridging straight into local storage.
+- `client/src/utils/` - Shared logic for reading plugin exports, filtering, storage access, and rendering wiki content.
+- `client/functions/` - Cloudflare Pages functions (edge API) handling shared route creation and retrieval mapping to Cloudflare KV.
 
 ## How the Data Works
 
@@ -82,10 +95,7 @@ npm run lint
 For deeper dives into our data strategy, check out [Docs: Data Pipeline](docs/data-pipeline.md).
 
 ## Deployment
-
-Because the application compiles down to flat static files, it can be hosted essentially anywhere for free (GitHub Pages, Cloudflare Pages, Netlify, Vercel, you name it).
-
-*(Note: While "vite.config.ts" might have a proxy configured for "/api", it's just a placeholder—we don't need or provide a backend out of the box right now.)*
+The frontend of the application compiles down to flat static files. However, the sharing functionality requires **Cloudflare Pages** and a **Cloudflare KV** namespace binding to function. When hosted on Cloudflare Pages, the `/api/share` endpoint is automatically mapped to the logic in `client/functions/api/share/`.
 
 See [Docs: Deployment](docs/deployment.md) for more details.
 

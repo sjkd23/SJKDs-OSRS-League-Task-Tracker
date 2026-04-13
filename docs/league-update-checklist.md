@@ -20,11 +20,19 @@ Sometimes new leagues bring new Regions, Skill subsets, or Tiers.
 - Ensure they conform to the folder structure (`areas/`, `difficulties/`, `skills/`).
 - If names have changed, update `client/src/lib/wikiIcons.ts` mappings.
 
-## 4. Test
-- Run `npm run dev`.
-- Ensure the app title, tasks, filters, and icons are rendering correctly.
-- If tasks aren't parsing correct, adjust `client/src/lib/mapScraperTask.ts`.
+## 4. Check Data Backwards Compatibility
+Since Route Shares (saved in Cloudflare KV) store tasks largely by reference/ID configurations, ensure that new scraped JSONs maintain stable task IDs if possible to prevent old share links breaking. If breaking changes happen, test the `/api/share` handlers for failure.
 
-## 5. Build and Deploy
-- Commit changes and run `npm run build` or push to your deployment pipeline.
-- The next time users visit, the app will automatically fetch the new JSON data and present the updated League tasks!
+## 5. Test
+When testing the new dataset, execute the following smoke tests before considering the update complete:
+- **Plugin Import Validation:** Successfully import an active progress string from the RuneLite Tasks Tracker plugin.
+- **Task Type Compatibility:** Ensure no "Wrong task type" errors occur during import (which usually means `pluginTaskType` in `leagueConfig.ts` is mismatched).  
+- **Route Import/Export:** Create a custom route, add generic tasks, save it, and reload the browser. Then attempt to export it to RuneLite format.
+- **Share/Load Sanity Check:** Ensure you are running `npm run pages:dev` to enable KV backend functions, create a custom Route Planner list, click "Share", obtain the shortlink, and successfully reload the list from that shortlink locally.
+
+If all smoke tests pass:
+- Ensure the app title, filters, UI, and icons render correctly visually.
+
+## 6. Build and Deploy
+- Commit changes and push safely to trigger the Cloudflare Pages deploy action.
+- The next time users visit, the Edge will auto-cache the new JSON, and the League tasks will update!

@@ -1,4 +1,4 @@
-﻿import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
+﻿import { Fragment, useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import {
   DndContext,
@@ -9,6 +9,7 @@ import {
   useDroppable,
   useSensor,
   useSensors,
+  type DragOverEvent,
   type DragEndEvent,
   type DragStartEvent,
   type Modifier,
@@ -182,6 +183,22 @@ interface RoutePlannerPanelProps {
   onMoveItem: (routeItemId: string, destSectionId: string, destIndex: number) => void;
 }
 
+interface CrossSectionPreview {
+  activeRouteItemId: string;
+  sourceSectionId: string;
+  destSectionId: string;
+  destIndex: number;
+}
+
+function sectionEndDropId(sectionId: string): string {
+  return `${sectionId}::end`;
+}
+
+function parseSectionEndDropId(dropId: string): string | null {
+  if (!dropId.endsWith('::end')) return null;
+  return dropId.slice(0, -'::end'.length) || null;
+}
+
 // ─── Sortable row (real task) ─────────────────────────────────────────────────
 
 interface SortableRowProps {
@@ -196,6 +213,7 @@ interface SortableRowProps {
   onRemove: (taskId: string) => void;
   isMapFocused?: boolean;
   isPlacingLocation?: boolean;
+  suppressCrossSectionShift?: boolean;
 }
 
 function SortableRow({
@@ -209,6 +227,7 @@ function SortableRow({
   onClearLocation,
   isMapFocused,
   isPlacingLocation,
+  suppressCrossSectionShift,
 }: SortableRowProps) {
   const {
     attributes,
@@ -220,8 +239,8 @@ function SortableRow({
   } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: suppressCrossSectionShift && !isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: suppressCrossSectionShift && !isDragging ? undefined : transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
@@ -429,6 +448,7 @@ interface SortableCustomRowProps {
   onClearLocation?: (routeItemId: string) => void;
   isMapFocused?: boolean;
   isPlacingLocation?: boolean;
+  suppressCrossSectionShift?: boolean;
 }
 
 function SortableCustomRow({
@@ -442,6 +462,7 @@ function SortableCustomRow({
   onClearLocation,
   isMapFocused,
   isPlacingLocation,
+  suppressCrossSectionShift,
 }: SortableCustomRowProps) {
   const [editingField, setEditingField] = useState<'label' | 'description' | 'note' | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -457,8 +478,8 @@ function SortableCustomRow({
   } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: suppressCrossSectionShift && !isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: suppressCrossSectionShift && !isDragging ? undefined : transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
@@ -784,9 +805,10 @@ interface UnresolvedTaskRowProps {
   listPos: number;
   isRunMode: boolean;
   onRemove: (taskId: string) => void;
+  suppressCrossSectionShift?: boolean;
 }
 
-function UnresolvedTaskRow({ item, listPos, isRunMode, onRemove }: UnresolvedTaskRowProps) {
+function UnresolvedTaskRow({ item, listPos, isRunMode, onRemove, suppressCrossSectionShift }: UnresolvedTaskRowProps) {
   const {
     attributes,
     listeners,
@@ -797,8 +819,8 @@ function UnresolvedTaskRow({ item, listPos, isRunMode, onRemove }: UnresolvedTas
   } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: suppressCrossSectionShift && !isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: suppressCrossSectionShift && !isDragging ? undefined : transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
@@ -1138,6 +1160,65 @@ function MobileEmptySectionDropTarget({ sectionId }: { sectionId: string }) {
   );
 }
 
+function TableSectionEndDropTarget({ sectionId }: { sectionId: string }) {
+  const id = sectionEndDropId(sectionId);
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <tr ref={setNodeRef}>
+      <td colSpan={7} className="px-3 py-0 bg-wiki-table-bg dark:bg-wiki-table-bg-dark border-0">
+        <div
+          className={[
+            'h-3 my-0.5 rounded-sm transition-colors',
+            isOver
+              ? 'border border-dashed border-wiki-link dark:border-wiki-link-dark bg-wiki-link/10 dark:bg-wiki-link-dark/10'
+              : 'border border-transparent bg-transparent opacity-0',
+          ].join(' ')}
+        />
+      </td>
+    </tr>
+  );
+}
+
+function MobileSectionEndDropTarget({ sectionId }: { sectionId: string }) {
+  const id = sectionEndDropId(sectionId);
+  const { setNodeRef, isOver } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        'h-4 mb-1 rounded-sm transition-colors',
+        isOver
+          ? 'border border-dashed border-wiki-link dark:border-wiki-link-dark bg-wiki-link/10 dark:bg-wiki-link-dark/10'
+          : 'border border-transparent bg-transparent opacity-0',
+      ].join(' ')}
+    />
+  );
+}
+
+function TableCrossSectionInsertPlaceholder() {
+  return (
+    <tr aria-hidden="true">
+      <td
+        colSpan={7}
+        className="px-3 py-0 bg-wiki-table-bg dark:bg-wiki-table-bg-dark"
+      >
+        <div className="h-10 my-1 rounded-sm border border-dashed border-wiki-link dark:border-wiki-link-dark bg-wiki-link/5 dark:bg-wiki-link-dark/5" />
+      </td>
+    </tr>
+  );
+}
+
+function MobileCrossSectionInsertPlaceholder() {
+  return (
+    <div
+      aria-hidden="true"
+      className="h-16 mb-2 rounded-sm border border-dashed border-wiki-link dark:border-wiki-link-dark bg-wiki-link/5 dark:bg-wiki-link-dark/5"
+    />
+  );
+}
+
 // ─── Table section (section header + its rows) ────────────────────────────────
 
 interface TableSectionProps {
@@ -1159,6 +1240,9 @@ interface TableSectionProps {
   onClearLocation?: (routeItemId: string) => void;
   focusedItemId?: string | null;
   placingRouteItemId?: string | null;
+  crossSectionPreview: CrossSectionPreview | null;
+  suppressCrossSectionShift: boolean;
+  isDragActive: boolean;
 }
 
 function TableSection({
@@ -1180,7 +1264,15 @@ function TableSection({
   onClearLocation,
   focusedItemId,
   placingRouteItemId,
+  crossSectionPreview,
+  suppressCrossSectionShift,
+  isDragActive,
 }: TableSectionProps) {
+  const previewForSection =
+    crossSectionPreview && crossSectionPreview.destSectionId === section.id
+      ? crossSectionPreview
+      : null;
+
   return (
     <>
       <SectionHeaderRow
@@ -1192,63 +1284,74 @@ function TableSection({
         onRemove={onRemoveSection}
       />
 
-      {!isDraggingSection && section.items.map((item) => {
+      {!isDraggingSection && section.items.map((item, itemIndex) => {
         if (!itemIndexMap.has(item.routeItemId)) return null;
         const listPos = itemIndexMap.get(item.routeItemId)!;
         const isMapFocused = focusedItemId === item.routeItemId;
         const isPlacingLocation = placingRouteItemId === item.routeItemId;
-        if (item.isCustom) {
-          return (
-            <SortableCustomRow
-              key={item.taskId}
-              item={item}
-              listPos={listPos}
-              isRunMode={isRunMode}
-              onRemove={onRemoveTask}
-              onEdit={onEditCustomTask}
-              mapVisible={mapVisible}
-              onFocusOnMap={onFocusOnMap}
-              onStartPlaceLocation={onStartPlaceLocation}
-              onClearLocation={onClearLocation}
-              isMapFocused={isMapFocused}
-              isPlacingLocation={isPlacingLocation}
-            />
-          );
-        }
-        const task = taskMap.get(item.taskId);
-        if (!task) {
-          // Task not found in the current dataset — render a preserved placeholder
-          // instead of dropping the item silently. The user can still remove it.
-          return (
-            <UnresolvedTaskRow
-              key={item.routeItemId}
-              item={item}
-              listPos={listPos}
-              isRunMode={isRunMode}
-              onRemove={onRemoveTask}
-            />
-          );
-        }
         return (
-          <SortableRow
-            key={item.taskId}
-            item={item}
-            task={task}
-            listPos={listPos}
-            isRunMode={isRunMode}
-            onRemove={onRemoveTask}
-            mapVisible={mapVisible}
-            onFocusOnMap={onFocusOnMap}
-            onStartPlaceLocation={onStartPlaceLocation}
-            onClearLocation={onClearLocation}
-            isMapFocused={isMapFocused}
-            isPlacingLocation={isPlacingLocation}
-          />
+          <Fragment key={item.routeItemId}>
+            {previewForSection?.destIndex === itemIndex && (
+              <TableCrossSectionInsertPlaceholder />
+            )}
+
+            {item.isCustom ? (
+              <SortableCustomRow
+                item={item}
+                listPos={listPos}
+                isRunMode={isRunMode}
+                onRemove={onRemoveTask}
+                onEdit={onEditCustomTask}
+                mapVisible={mapVisible}
+                onFocusOnMap={onFocusOnMap}
+                onStartPlaceLocation={onStartPlaceLocation}
+                onClearLocation={onClearLocation}
+                isMapFocused={isMapFocused}
+                isPlacingLocation={isPlacingLocation}
+                suppressCrossSectionShift={suppressCrossSectionShift}
+              />
+            ) : (() => {
+              const task = taskMap.get(item.taskId);
+              if (!task) {
+                // Task not found in the current dataset — render a preserved placeholder
+                // instead of dropping the item silently. The user can still remove it.
+                return (
+                  <UnresolvedTaskRow
+                    item={item}
+                    listPos={listPos}
+                    isRunMode={isRunMode}
+                    onRemove={onRemoveTask}
+                    suppressCrossSectionShift={suppressCrossSectionShift}
+                  />
+                );
+              }
+              return (
+                <SortableRow
+                  item={item}
+                  task={task}
+                  listPos={listPos}
+                  isRunMode={isRunMode}
+                  onRemove={onRemoveTask}
+                  mapVisible={mapVisible}
+                  onFocusOnMap={onFocusOnMap}
+                  onStartPlaceLocation={onStartPlaceLocation}
+                  onClearLocation={onClearLocation}
+                  isMapFocused={isMapFocused}
+                  isPlacingLocation={isPlacingLocation}
+                  suppressCrossSectionShift={suppressCrossSectionShift}
+                />
+              );
+            })()}
+          </Fragment>
         );
       })}
 
+      {!isRunMode && !isDraggingSection && isDragActive && section.items.length > 0 && (
+        <TableSectionEndDropTarget sectionId={section.id} />
+      )}
+
       {/* Empty section drop target — visible when no items exist */}
-      {!isRunMode && !isDraggingSection && section.items.length === 0 && (
+      {!isRunMode && !isDraggingSection && section.items.length === 0 && !previewForSection && (
         <TableEmptySectionDropTarget sectionId={section.id} />
       )}
 
@@ -1331,12 +1434,12 @@ function SortableSectionChip({ section, isBeingDragged, isRunMode, onJump }: Sor
 
 // ─── Mobile route card (real task) ────────────────────────────────────────────
 
-function SortableRouteCard({ item, task, listPos, isRunMode, onRemove, onFocusOnMap, onStartPlaceLocation, onClearLocation, isMapFocused, isPlacingLocation }: SortableRowProps) {
+function SortableRouteCard({ item, task, listPos, isRunMode, onRemove, onFocusOnMap, onStartPlaceLocation, onClearLocation, isMapFocused, isPlacingLocation, suppressCrossSectionShift }: SortableRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: suppressCrossSectionShift && !isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: suppressCrossSectionShift && !isDragging ? undefined : transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
@@ -1496,7 +1599,7 @@ function SortableRouteCard({ item, task, listPos, isRunMode, onRemove, onFocusOn
 
 // ─── Mobile custom task card ───────────────────────────────────────────────────
 
-function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit, onFocusOnMap, onStartPlaceLocation, onClearLocation, isMapFocused, isPlacingLocation }: SortableCustomRowProps) {
+function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit, onFocusOnMap, onStartPlaceLocation, onClearLocation, isMapFocused, isPlacingLocation, suppressCrossSectionShift }: SortableCustomRowProps) {
   const [editingField, setEditingField] = useState<'label' | 'description' | 'note' | null>(null);
   const [editValue, setEditValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1504,8 +1607,8 @@ function SortableCustomCard({ item, listPos, isRunMode, onRemove, onEdit, onFocu
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.routeItemId });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: suppressCrossSectionShift && !isDragging ? undefined : CSS.Transform.toString(transform),
+    transition: suppressCrossSectionShift && !isDragging ? undefined : transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
     zIndex: isDragging ? 2 : undefined,
@@ -1763,6 +1866,9 @@ interface MobileRouteSectionProps {
   onClearLocation?: (routeItemId: string) => void;
   focusedItemId?: string | null;
   placingRouteItemId?: string | null;
+  crossSectionPreview: CrossSectionPreview | null;
+  suppressCrossSectionShift: boolean;
+  isDragActive: boolean;
 }
 
 function MobileRouteSection({
@@ -1784,6 +1890,9 @@ function MobileRouteSection({
   onClearLocation,
   focusedItemId,
   placingRouteItemId,
+  crossSectionPreview,
+  suppressCrossSectionShift,
+  isDragActive,
 }: MobileRouteSectionProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(section.name);
@@ -1812,6 +1921,11 @@ function MobileRouteSection({
     if (trimmed && trimmed !== section.name) onRenameSection(section.id, trimmed);
     setEditing(false);
   };
+
+  const previewForSection =
+    crossSectionPreview && crossSectionPreview.destSectionId === section.id
+      ? crossSectionPreview
+      : null;
 
   return (
     <div id={`route-section-${section.id}`} className="mb-3">
@@ -1888,77 +2002,88 @@ function MobileRouteSection({
       </div>
 
       {/* Task cards */}
-      {!isDraggingSection && section.items.map((item) => {
+      {!isDraggingSection && section.items.map((item, itemIndex) => {
         if (!itemIndexMap.has(item.routeItemId)) return null;
         const listPos = itemIndexMap.get(item.routeItemId)!;
         const isMapFocused = focusedItemId === item.routeItemId;
         const isPlacingLocation = placingRouteItemId === item.routeItemId;
         return (
-          <div key={item.taskId} className="mb-2">
-            {item.isCustom ? (
-              <SortableCustomCard
-                item={item}
-                listPos={listPos}
-                isRunMode={isRunMode}
-                onRemove={onRemoveTask}
-                onEdit={onEditCustomTask}
-                mapVisible={mapVisible}
-                onFocusOnMap={onFocusOnMap}
-                onStartPlaceLocation={onStartPlaceLocation}
-                onClearLocation={onClearLocation}
-                isMapFocused={isMapFocused}
-                isPlacingLocation={isPlacingLocation}
-              />
-            ) : (() => {
-              const task = taskMap.get(item.taskId);
-              if (!task) {
-                // Render a muted placeholder card instead of dropping the item.
-                const snapName = item._snap?.name ?? (() => {
-                  const m = item.taskId.match(/^task-\d+-(\d+)$/);
-                  return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
-                })();
-                return (
-                  <div
-                    className="px-3 py-2 border border-dashed border-wiki-border dark:border-wiki-border-dark rounded-sm opacity-60"
-                    title="This task could not be found in the current dataset."
-                  >
-                    <span className="text-[11px] italic text-wiki-muted dark:text-wiki-muted-dark">{snapName}</span>
-                    {!isRunMode && (
-                      <button
-                        onClick={() => onRemoveTask(item.taskId)}
-                        className="ml-2 text-[11px] text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <SortableRouteCard
+          <Fragment key={item.routeItemId}>
+            {previewForSection?.destIndex === itemIndex && (
+              <MobileCrossSectionInsertPlaceholder />
+            )}
+            <div className="mb-2">
+              {item.isCustom ? (
+                <SortableCustomCard
                   item={item}
-                  task={task}
                   listPos={listPos}
                   isRunMode={isRunMode}
                   onRemove={onRemoveTask}
+                  onEdit={onEditCustomTask}
                   mapVisible={mapVisible}
                   onFocusOnMap={onFocusOnMap}
                   onStartPlaceLocation={onStartPlaceLocation}
                   onClearLocation={onClearLocation}
                   isMapFocused={isMapFocused}
                   isPlacingLocation={isPlacingLocation}
+                  suppressCrossSectionShift={suppressCrossSectionShift}
                 />
-              );
-            })()}
-          </div>
+              ) : (() => {
+                const task = taskMap.get(item.taskId);
+                if (!task) {
+                  // Render a muted placeholder card instead of dropping the item.
+                  const snapName = item._snap?.name ?? (() => {
+                    const m = item.taskId.match(/^task-\d+-(\d+)$/);
+                    return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
+                  })();
+                  return (
+                    <div
+                      className="px-3 py-2 border border-dashed border-wiki-border dark:border-wiki-border-dark rounded-sm opacity-60"
+                      title="This task could not be found in the current dataset."
+                    >
+                      <span className="text-[11px] italic text-wiki-muted dark:text-wiki-muted-dark">{snapName}</span>
+                      {!isRunMode && (
+                        <button
+                          onClick={() => onRemoveTask(item.taskId)}
+                          className="ml-2 text-[11px] text-wiki-muted dark:text-wiki-muted-dark hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <SortableRouteCard
+                    item={item}
+                    task={task}
+                    listPos={listPos}
+                    isRunMode={isRunMode}
+                    onRemove={onRemoveTask}
+                    mapVisible={mapVisible}
+                    onFocusOnMap={onFocusOnMap}
+                    onStartPlaceLocation={onStartPlaceLocation}
+                    onClearLocation={onClearLocation}
+                    isMapFocused={isMapFocused}
+                    isPlacingLocation={isPlacingLocation}
+                    suppressCrossSectionShift={suppressCrossSectionShift}
+                  />
+                );
+              })()}
+            </div>
+          </Fragment>
         );
       })}
+
+      {!isRunMode && !isDraggingSection && isDragActive && section.items.length > 0 && (
+        <MobileSectionEndDropTarget sectionId={section.id} />
+      )}
 
       {/* Add custom task */}
       {!isRunMode && !isDraggingSection && (
         <>
           {/* Empty section drop target — visible when no items exist */}
-          {section.items.length === 0 && (
+          {section.items.length === 0 && !previewForSection && (
             <MobileEmptySectionDropTarget sectionId={section.id} />
           )}
           {addingCustomToSection === section.id ? (
@@ -2489,34 +2614,125 @@ export function RoutePlannerPanel({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
+  const [draggedRouteItemId, setDraggedRouteItemId] = useState<string | null>(null);
+  const [crossSectionPreview, setCrossSectionPreview] = useState<CrossSectionPreview | null>(null);
+
+  const resolveItemSection = useCallback(
+    (routeItemId: string): { sectionId: string; index: number } | null => {
+      for (const section of route.sections) {
+        const index = section.items.findIndex((item) => item.routeItemId === routeItemId);
+        if (index !== -1) {
+          return { sectionId: section.id, index };
+        }
+      }
+      return null;
+    },
+    [route.sections],
+  );
+
+  const resolveDestinationFromOverId = useCallback(
+    (overId: string): { sectionId: string; index: number } | null => {
+      const endSectionId = parseSectionEndDropId(overId);
+      if (endSectionId) {
+        const section = route.sections.find((candidate) => candidate.id === endSectionId);
+        if (section) {
+          return { sectionId: section.id, index: section.items.length };
+        }
+      }
+
+      const emptySection = route.sections.find((section) => section.id === overId);
+      if (emptySection) {
+        return { sectionId: emptySection.id, index: 0 };
+      }
+
+      for (const section of route.sections) {
+        const index = section.items.findIndex((item) => item.routeItemId === overId);
+        if (index !== -1) {
+          return { sectionId: section.id, index };
+        }
+      }
+
+      return null;
+    },
+    [route.sections],
+  );
+
+  const handleDragStart = useCallback(
+    (event: DragStartEvent) => {
       if (isRunMode) return;
-      const { active, over } = event;
-      if (!over || active.id === over.id) return;
+      const activeId = event.active.id as string;
+      if (!resolveItemSection(activeId)) return;
+      setDraggedRouteItemId(activeId);
+      setCrossSectionPreview(null);
+    },
+    [isRunMode, resolveItemSection],
+  );
 
-      const draggedId = active.id as string;
-      const overId = over.id as string;
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      if (isRunMode) return;
 
-      // If the drop target is an empty section placeholder, insert at index 0.
-      const overSection = route.sections.find((s) => s.id === overId);
-      if (overSection) {
-        onMoveItem(draggedId, overSection.id, 0);
+      const activeId = event.active.id as string;
+      const source = resolveItemSection(activeId);
+      if (!source) {
+        setCrossSectionPreview(null);
         return;
       }
 
-      // Otherwise find which section contains the hovered item and insert at
-      // that item's current index (arrayMove semantics for same-section,
-      // explicit insert-before for cross-section).
-      for (const section of route.sections) {
-        const destIndex = section.items.findIndex((i) => i.routeItemId === overId);
-        if (destIndex !== -1) {
-          onMoveItem(draggedId, section.id, destIndex);
-          return;
-        }
+      if (!event.over) {
+        setCrossSectionPreview(null);
+        return;
+      }
+
+      const destination = resolveDestinationFromOverId(event.over.id as string);
+      if (!destination) {
+        setCrossSectionPreview(null);
+        return;
+      }
+
+      if (destination.sectionId === source.sectionId) {
+        setCrossSectionPreview(null);
+        return;
+      }
+
+      setCrossSectionPreview({
+        activeRouteItemId: activeId,
+        sourceSectionId: source.sectionId,
+        destSectionId: destination.sectionId,
+        destIndex: destination.index,
+      });
+    },
+    [isRunMode, resolveItemSection, resolveDestinationFromOverId],
+  );
+
+  const handleDragCancel = useCallback(() => {
+    setDraggedRouteItemId(null);
+    setCrossSectionPreview(null);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setDraggedRouteItemId(null);
+      if (isRunMode) return;
+
+      const { active, over } = event;
+
+      if (crossSectionPreview && crossSectionPreview.activeRouteItemId === (active.id as string)) {
+        onMoveItem(active.id as string, crossSectionPreview.destSectionId, crossSectionPreview.destIndex);
+        setCrossSectionPreview(null);
+        return;
+      }
+
+      setCrossSectionPreview(null);
+      if (!over || active.id === over.id) return;
+
+      const draggedId = active.id as string;
+      const destination = resolveDestinationFromOverId(over.id as string);
+      if (destination) {
+        onMoveItem(draggedId, destination.sectionId, destination.index);
       }
     },
-    [route.sections, onMoveItem, isRunMode],
+    [onMoveItem, isRunMode, crossSectionPreview, resolveDestinationFromOverId],
   );
 
   // ── DnD setup (section reorder) ────────────────────────────────────────────
@@ -3225,6 +3441,9 @@ export function RoutePlannerPanel({
               sensors={sensors}
               collisionDetection={closestCenter}
               modifiers={[restrictToVerticalAxis]}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragCancel={handleDragCancel}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
@@ -3252,6 +3471,9 @@ export function RoutePlannerPanel({
                     onClearLocation={handleClearLocation}
                     focusedItemId={mapFocusedItemId}
                     placingRouteItemId={mapPlacementItemId}
+                    crossSectionPreview={crossSectionPreview}
+                    suppressCrossSectionShift={Boolean(crossSectionPreview && draggedRouteItemId)}
+                    isDragActive={Boolean(draggedRouteItemId)}
                   />
                 ))}
               </SortableContext>
@@ -3264,6 +3486,9 @@ export function RoutePlannerPanel({
               sensors={sensors}
               collisionDetection={closestCenter}
               modifiers={[restrictToVerticalAxis]}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragCancel={handleDragCancel}
               onDragEnd={handleDragEnd}
             >
               <table className="wikitable table-fixed border-separate border-spacing-0 min-w-[700px] sm:min-w-full">
@@ -3304,6 +3529,9 @@ export function RoutePlannerPanel({
                         onClearLocation={handleClearLocation}
                         focusedItemId={mapFocusedItemId}
                         placingRouteItemId={mapPlacementItemId}
+                        crossSectionPreview={crossSectionPreview}
+                        suppressCrossSectionShift={Boolean(crossSectionPreview && draggedRouteItemId)}
+                        isDragActive={Boolean(draggedRouteItemId)}
                       />
                     ))}
                   </tbody>

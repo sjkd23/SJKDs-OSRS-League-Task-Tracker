@@ -167,7 +167,7 @@ function SortableMapRow({
       style={style}
       data-map-list-id={item.routeItemId}
       className={[
-        'flex items-center border-b border-wiki-border/40 dark:border-wiki-border-dark/40 select-none',
+        'flex items-center border-b border-wiki-border/60 dark:border-wiki-border-dark/60 select-none',
         isFocused
           ? 'bg-blue-50/50 dark:bg-blue-900/20 border-l-[3px] border-l-[#2563eb] dark:border-l-[#60a5fa]'
           : isHovered
@@ -226,7 +226,7 @@ function SortableMapRow({
             'flex-1 min-w-0 truncate leading-snug text-[13px]',
             isFocused
               ? 'font-semibold text-wiki-text dark:text-wiki-text-dark'
-              : 'text-wiki-text dark:text-wiki-text-dark',
+              : 'font-medium text-wiki-text dark:text-wiki-text-dark',
             isCompleted ? 'opacity-60' : '',
           ].join(' ')}
         >
@@ -445,25 +445,34 @@ export function MapRouteList({
       onDragEnd={handleDragEnd}
     >
       <div className="flex flex-col h-full min-h-0">
-        {/* Panel header */}
-        <div className="px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark bg-wiki-mid dark:bg-wiki-mid-dark flex-shrink-0 flex items-center justify-between gap-1">
-          <span className="text-[12px] font-semibold uppercase tracking-wide text-wiki-text dark:text-wiki-text-dark">
+        {/* Panel header — relative so drag hint can anchor absolutely below it */}
+        <div className="px-3 py-2 border-b border-wiki-border dark:border-wiki-border-dark bg-wiki-mid dark:bg-wiki-mid-dark flex-shrink-0 flex items-center justify-between gap-1 relative">
+          <span className="text-[12px] font-bold uppercase tracking-wider text-wiki-text dark:text-wiki-text-dark">
             Route
           </span>
-          <span className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
+          <span className="text-[11px] font-medium text-wiki-muted dark:text-wiki-muted-dark tabular-nums">
             {visibleCount} item{visibleCount !== 1 ? 's' : ''}
           </span>
-        </div>
-
-        {/* Drag-to-map hint - shown only while a row is being dragged */}
-        {draggingId && (
-          <div className="flex-shrink-0 flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-medium border-b border-wiki-border dark:border-wiki-border-dark bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-muted dark:text-wiki-muted-dark select-none">
+          {/* Drag-to-map hint — out of layout flow, overlays top of list while dragging */}
+          <div
+            aria-live="polite"
+            className={[
+              "absolute top-full left-0 right-0 z-10",
+              "flex items-center justify-center gap-1.5 px-3 py-1.5",
+              "text-[11px] font-medium select-none",
+              "border-b border-wiki-border dark:border-wiki-border-dark",
+              "bg-wiki-surface/95 dark:bg-wiki-surface-dark/95",
+              "text-wiki-muted dark:text-wiki-muted-dark",
+              "transition-opacity duration-150",
+              draggingId ? "opacity-100" : "opacity-0 pointer-events-none",
+            ].join(' ')}
+          >
             <svg viewBox="0 0 24 30" fill="currentColor" className="w-2.5 h-3 flex-shrink-0 opacity-60" aria-hidden="true">
               <path d="M12 1C6.477 1 2 5.477 2 11c0 4.75 4.5 10.5 10 18C18 21.5 22 15.75 22 11 22 5.477 17.523 1 12 1z" />
             </svg>
             <span>Release over the map to place a pin</span>
           </div>
-        )}
+        </div>
 
         {/* Scrollable item list */}
         <SortableContext items={orderedItemIds} strategy={verticalListSortingStrategy}>
@@ -478,10 +487,10 @@ export function MapRouteList({
                 <div key={section.id}>
                   {visibleSections.length > 1 && (
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-wiki-mid dark:bg-wiki-mid-dark border-b border-wiki-border dark:border-wiki-border-dark select-none">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-wiki-muted dark:text-wiki-muted-dark leading-none truncate flex-1">
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-wiki-text/75 dark:text-wiki-text-dark/75 leading-none truncate flex-1">
                         {section.name}
                       </span>
-                      <span className="text-[10px] text-wiki-muted/70 dark:text-wiki-muted-dark/70 flex-shrink-0 tabular-nums">
+                      <span className="text-[11px] font-medium text-wiki-muted dark:text-wiki-muted-dark flex-shrink-0 tabular-nums">
                         {visibleSectionItems.length}
                       </span>
                     </div>
@@ -532,7 +541,7 @@ export function MapRouteList({
         {/* Detail pane */}
         <div
           className={[
-            'flex-shrink-0 border-t border-wiki-border dark:border-wiki-border-dark overflow-hidden',
+            'flex-shrink-0 border-t-2 border-wiki-border dark:border-wiki-border-dark overflow-hidden',
             detail?.isFocused
               ? 'bg-blue-50 dark:bg-blue-900/10'
               : 'bg-wiki-article dark:bg-wiki-article-dark',
@@ -540,7 +549,7 @@ export function MapRouteList({
           style={{ minHeight: '96px', maxHeight: '180px' }}
         >
           {detail ? (
-            <div className="px-3 py-2.5 h-full overflow-y-auto">
+              <div className="px-3 py-3 h-full overflow-y-auto">
               <div className="flex items-start gap-2 mb-1">
                 {detail.isPinnable && (
                   <svg width="9" height="12" viewBox="0 0 24 30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="flex-shrink-0 mt-[3px]">
@@ -554,7 +563,7 @@ export function MapRouteList({
                 )}
                 <div className="flex-1 min-w-0">
                   <p className={[
-                    'font-semibold text-[13px] leading-snug break-words',
+                    'font-semibold text-[14px] leading-snug break-words',
                     detail.isFocused
                       ? 'text-[#1e3a8a] dark:text-[#93c5fd]'
                       : 'text-wiki-text dark:text-wiki-text-dark',
@@ -583,7 +592,7 @@ export function MapRouteList({
               </div>
 
               {detail.desc && (
-                <div className="text-[12px] text-wiki-text/85 dark:text-wiki-text-dark/80 leading-snug mb-1.5 break-words">
+                <div className="text-[12px] text-wiki-text dark:text-wiki-text-dark leading-relaxed mb-2 break-words">
                   {detail.descParts && detail.descParts.length > 0 ? (
                     <RichText parts={detail.descParts} />
                   ) : (
@@ -593,11 +602,11 @@ export function MapRouteList({
               )}
 
               {detail.reqs && !detail.isCustom && (
-                <div className="flex items-start gap-1.5 mb-1">
-                  <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-wiki-muted dark:text-wiki-muted-dark mt-[2px]">
+                <div className="flex items-start gap-1.5 mb-1.5">
+                  <span className="flex-shrink-0 text-[11px] font-bold uppercase tracking-wider text-wiki-text/65 dark:text-wiki-text-dark/65 mt-[2px]">
                     Reqs:
                   </span>
-                  <div className="text-[12px] text-wiki-muted dark:text-wiki-muted-dark leading-snug">
+                  <div className="text-[12px] text-wiki-text/80 dark:text-wiki-text-dark/75 leading-snug">
                     <RequirementsCell
                       requirementsText={detail.reqs}
                       requirementsParts={detail.reqsParts}
@@ -607,8 +616,8 @@ export function MapRouteList({
               )}
 
               {detail.note && (
-                <p className="text-[11px] italic text-wiki-muted dark:text-wiki-muted-dark leading-snug break-words">
-                  <span className="font-bold not-italic text-[10px] uppercase tracking-wider mr-1">Note:</span>
+                <p className="text-[12px] italic text-wiki-text/70 dark:text-wiki-text-dark/65 leading-snug break-words">
+                  <span className="font-bold not-italic text-[11px] uppercase tracking-wider mr-1">Note:</span>
                   {detail.note}
                 </p>
               )}

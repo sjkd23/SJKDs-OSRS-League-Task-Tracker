@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { useTaskStore } from '@/state/useTaskStore';
 import { useRouteStore } from '@/state/useRouteStore';
 import { useTheme } from '@/hooks/useTheme';
@@ -14,6 +15,7 @@ import type { ImportStatus } from '@/components/ImportButton/ImportButton';
 import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { getShareParam, decodeSharedRoute, clearShareParam, isShortShareId, loadSharedRouteFromApi } from '@/utils/routeShare';
+import { loadFromStorage, saveToStorage } from '@/utils/storage';
 import type { SortField } from '@/types/task';
 
 // Memoize TaskTable to prevent rerenders when только showFilters changes
@@ -44,6 +46,16 @@ export default function App() {
   const [appMode, setAppMode] = useState<'tracker' | 'planner'>(() =>
     new URLSearchParams(window.location.search).has('r') ? 'planner' : 'tracker',
   );
+  const [plannerWide, setPlannerWide] = useState(() =>
+    loadFromStorage<boolean>('osrs-lt:planner-wide', false),
+  );
+  const togglePlannerWide = useCallback(() => {
+    setPlannerWide((w) => {
+      const next = !w;
+      saveToStorage('osrs-lt:planner-wide', next);
+      return next;
+    });
+  }, []);
 
   // ── Shared-route hydration (from URL ?r= param) ───────────────────────────────
   const [sharedRouteError, setSharedRouteError] = useState<string | null>(null);
@@ -164,6 +176,29 @@ export default function App() {
   // taskIdsInRoute is forwarded to the table/card components for per-row state styling.
   const displayTasks = visibleTasks;
 
+  /**
+   * Scroll-preserving wrapper for addTaskToRoute used by the lower task list in
+   * planner mode. When a task is added the route panel above grows, which would
+   * normally push the lower list down on-screen. We capture the #task-list
+   * element's viewport position before the add, then after React has committed
+   * the updated DOM (inside a requestAnimationFrame) we scroll by the delta so
+   * the lower list stays visually fixed.
+   */
+  const addTaskToRoutePreservingScroll = useCallback((taskId: string) => {
+    const anchor = document.getElementById('task-list');
+    const before = anchor ? anchor.getBoundingClientRect().top : 0;
+    // flushSync forces React to commit the state update synchronously so we can
+    // measure the new DOM position immediately, without relying on rAF timing.
+    flushSync(() => {
+      addTaskToRoute(taskId);
+    });
+    const after = anchor ? anchor.getBoundingClientRect().top : 0;
+    const delta = after - before;
+    if (delta !== 0) {
+      window.scrollBy({ top: delta, behavior: 'instant' });
+    }
+  }, [addTaskToRoute]);
+
   // Route planner summary stats — used by the mobile sticky bar in planner mode
   const routeItemCount = useMemo(
     () => route.sections.reduce((sum, s) => sum + s.items.length, 0),
@@ -187,8 +222,8 @@ export default function App() {
   }, []);
 
   return (
-    <div 
-      className="min-h-screen bg-wiki-bg dark:bg-wiki-bg-dark pt-4 pb-4 px-3 sm:px-6 font-wiki relative"
+    <div
+      className={`min-h-screen bg-wiki-bg dark:bg-wiki-bg-dark pt-4 pb-4 font-wiki relative ${plannerWide && layoutMode !== 'mobile' ? 'px-1 sm:px-1' : 'px-3 sm:px-6'}`}
     >
       
       {/* ── Top Utility Layer (Desktop/Tablet Only) ─────────────────────── */}
@@ -302,7 +337,10 @@ export default function App() {
       )}
 
       {/* ── Wiki article container ────────────────────────────────────── */}
-      <div className="wiki-article">
+      <div
+        className="wiki-article"
+        style={plannerWide && layoutMode !== 'mobile' ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
+      >
         {/* ── Mode Tabs ─────────────────────────────────────────────── */}
         {/* -mx-6 cancels the wiki-article side padding so tabs reach edge-to-edge. */}
         <div className="-mx-6 border-b border-wiki-border dark:border-wiki-border-dark flex items-end pt-2 px-3">
@@ -392,7 +430,29 @@ export default function App() {
                 </a>
               </div>
             </div>
-            <div className="flex-shrink-0 md:mt-1">
+            <div className="flex-shrink-0 md:mt-1 flex items-center gap-3">
+              {layoutMode !== 'mobile' && (
+                <button
+                  onClick={togglePlannerWide}
+                  title={plannerWide ? 'Use default width' : 'Expand to wide layout'}
+                  className="inline-flex items-center gap-1 text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-link dark:hover:text-wiki-link-dark transition-colors"
+                >
+                  <svg viewBox="0 0 16 10" fill="currentColor" className="w-3.5 h-2.5 flex-shrink-0" aria-hidden="true">
+                    {plannerWide ? (
+                      <>
+                        <path d="M6 0h4v2H6zM0 4h16v2H0zM6 8h4v2H6z" />
+                        <path d="M0 0l3 2-3 2V0zm16 0v4l-3-2 3-2z" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="M6 0h4v2H6zM0 4h16v2H0zM6 8h4v2H6z" />
+                        <path d="M5 2L2 0 5 4V2zm6 0v2l3-2-3-2v2z" />
+                      </>
+                    )}
+                  </svg>
+                  <span className="text-[12px] font-medium">{plannerWide ? 'Default' : 'Wide'}</span>
+                </button>
+              )}
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
           </div>
@@ -533,7 +593,11 @@ export default function App() {
       {/* wiki-article surface. Closing that article and starting a new one below    */}
       {/* lets the bg-wiki-bg of the outer container show through as a real gap.     */}
       {appMode === 'planner' && (
-        <div className="wiki-article mt-4" id="task-list">
+        <div
+          className="wiki-article mt-4"
+          id="task-list"
+          style={plannerWide && layoutMode !== 'mobile' ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
+        >
           <div className="py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-3">
             <span className="font-bold text-[18px] text-wiki-text dark:text-wiki-text-dark">
               Task List
@@ -556,7 +620,7 @@ export default function App() {
                 onToggleTodo={toggleTodo}
                 mode={appMode}
                 taskIdsInRoute={taskIdsInRoute}
-                onAddToRoute={addTaskToRoute}
+                onAddToRoute={addTaskToRoutePreservingScroll}
               />
             ) : (
               <MemoizedTaskTable
@@ -567,7 +631,7 @@ export default function App() {
                 onToggleTodo={toggleTodo}
                 mode={appMode}
                 taskIdsInRoute={taskIdsInRoute}
-                onAddToRoute={addTaskToRoute}
+                onAddToRoute={addTaskToRoutePreservingScroll}
               />
             )}
           </main>

@@ -219,6 +219,19 @@ export function RouteMapPanel({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Prevent middle-click page autoscroll on the map canvas ─────────────────
+  // The browser enters "autoscroll" mode when the middle mouse button is pressed
+  // over a scrollable/any element. preventDefault() on button=1 mousedown stops it.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (e.button === 1) e.preventDefault();
+    };
+    container.addEventListener('mousedown', onMouseDown);
+    return () => container.removeEventListener('mousedown', onMouseDown);
+  }, []);
+
   // ── Resize invalidation (re-measure when parent changes our height) ─────────
   useEffect(() => {
     if (!map || containerHeight === undefined) return;

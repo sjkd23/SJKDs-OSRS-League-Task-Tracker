@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { useTaskStore } from '@/state/useTaskStore';
-import { useRouteStore } from '@/state/useRouteStore';
+import { useRouteStore, isMeaningfulRoute } from '@/state/useRouteStore';
 import { useTheme } from '@/hooks/useTheme';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { TaskTable } from '@/components/TaskTable/TaskTable';
@@ -16,8 +16,9 @@ import { RoutePlannerPanel } from '@/components/RoutePlanner/RoutePlannerPanel';
 import type { RouteTaskListVisibilityFilters } from '@/components/TaskFilters/TaskFiltersBar';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { getShareParam, decodeSharedRoute, clearShareParam, isShortShareId, loadSharedRouteFromApi } from '@/utils/routeShare';
-import { loadFromStorage, saveToStorage } from '@/utils/storage';
+import { loadFromStorage, saveToStorage, storageErrorEvent } from '@/utils/storage';
 import type { SortField } from '@/types/task';
+import type { Route } from '@/types/route';
 
 // Memoize TaskTable to prevent rerenders when только showFilters changes
 const MemoizedTaskTable = memo(TaskTable);
@@ -41,6 +42,9 @@ export default function App() {
     updateRouteName, replaceRoute, addCustomTask, editCustomTask,
     addSection, renameSection, removeSection, setRouteItemLocation,
   } = useRouteStore();
+  // Captured once at mount so the share-param hydration effect can check whether
+  // the user already has meaningful route content without a stale-closure risk.
+  const routeIsMeaningfulAtMount = useRef(isMeaningfulRoute(route));
   // Current app mode. 'tracker' is the default on load — Route Planner is opt-in.
   // If a shared route param (?r=) is present in the URL, start directly in planner mode
   // so the planner panel is visible as soon as the shared route is consumed.
@@ -64,6 +68,10 @@ export default function App() {
 
   // ── Shared-route hydration (from URL ?r= param) ───────────────────────────────
   const [sharedRouteError, setSharedRouteError] = useState<string | null>(null);
+  /** Decoded shared route awaiting user confirmation before replacing the active route. */
+  const [pendingSharedRoute, setPendingSharedRoute] = useState<Route | null>(null);
+  /** True when a saveToStorage call failed (e.g. quota exceeded). */
+  const [showSaveError, setShowSaveError] = useState(false);
   const hasConsumedSharedRoute = useRef(false);
   // Capture the raw ?r= param once on render (before clearShareParam removes it).
   // Stored in a ref so the effect below can access it without re-running on change.
@@ -96,11 +104,23 @@ export default function App() {
         setSharedRouteError(result.error);
         return;
       }
-      replaceRoute(result.route);
-      // appMode is already initialised to 'planner' when ?r= is present
+      if (routeIsMeaningfulAtMount.current) {
+        // User has an existing route — show a confirmation banner instead of silently overwriting.
+        setPendingSharedRoute(result.route);
+      } else {
+        replaceRoute(result.route);
+        // appMode is already initialised to 'planner' when ?r= is present
+      }
     });
   }, [loading, tasks, replaceRoute]);
-  
+
+  // ── Storage failure banner ────────────────────────────────────────────────
+  useEffect(() => {
+    const handleSaveFailed = () => setShowSaveError(true);
+    storageErrorEvent.addEventListener('save-failed', handleSaveFailed);
+    return () => storageErrorEvent.removeEventListener('save-failed', handleSaveFailed);
+  }, []);
+
   // ── Interaction State ───────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(true);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -577,6 +597,46 @@ export default function App() {
         )}
 
         {/* In planner mode, the route planner sits inside this wiki-article. */}
+        {showSaveError && (
+          <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
+            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
+              <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+            </svg>
+            <span className="flex-1"><strong>Save error:</strong> Your data could not be saved — browser storage may be full.</span>
+            <button
+              onClick={() => setShowSaveError(false)}
+              className="flex-shrink-0 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        {appMode === 'planner' && pendingSharedRoute !== null && (
+          <div className="mt-3 px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/50 text-[12.5px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-500 dark:text-amber-400" aria-hidden="true">
+              <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+            </svg>
+            <span className="flex-1">
+              A shared route was found (<strong>{pendingSharedRoute.name || 'Unnamed route'}</strong>).
+              {' '}Loading it will replace your current route.
+            </span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => { replaceRoute(pendingSharedRoute); setPendingSharedRoute(null); }}
+                className="px-2 py-0.5 text-[11.5px] font-medium bg-wiki-link dark:bg-wiki-link-dark text-white rounded hover:opacity-90 transition-opacity"
+              >
+                Load Shared Route
+              </button>
+              <button
+                onClick={() => setPendingSharedRoute(null)}
+                className="px-2 py-0.5 text-[11.5px] font-medium text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+              >
+                Keep My Route
+              </button>
+            </div>
+          </div>
+        )}
         {appMode === 'planner' && sharedRouteError && (
           <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
             <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">

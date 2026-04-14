@@ -42,6 +42,8 @@ import { RouteMapPanel, type MarkerViewModel } from './RouteMapPanel';
 import { MapRouteList } from './MapRouteList';
 import { SpreadsheetImportModal } from './SpreadsheetImportModal';
 import { downloadRouteCsv } from '@/utils/spreadsheetExport';
+import { backupStorageKeyOnce } from '@/utils/storage';
+import { isMeaningfulRoute, normalizeRoute } from '@/state/useRouteStore';
 
 // ─── Drag modifier ─────────────────────────────────────────────────────────────
 
@@ -86,23 +88,78 @@ function getAppStickyBottom(): number {
 
 // ─── Local save/load helpers ──────────────────────────────────────────────────
 
-const SAVED_ROUTES_KEY = 'osrs-lt:saved-routes';
+const SAVED_ROUTES_KEY_LEGACY = 'osrs-lt:saved-routes';
+const SAVED_ROUTES_KEY = 'osrs-lt:saved-routes:v2';
+const SAVED_ROUTES_LEGACY_SNAPSHOT_KEY = 'osrs-lt:saved-routes:pre-v2-backup';
 
 type SavedRouteEntry = { name: string; savedAt: string; route: Route };
 
-function loadSavedRoutes(): SavedRouteEntry[] {
+/**
+ * Validate and normalize a single saved-route entry loaded from localStorage.
+ * Returns null if the value is structurally invalid so callers can filter it out
+ * rather than crashing at runtime on corrupt / migrated data.
+ */
+function normalizeSavedRouteEntry(entry: unknown): SavedRouteEntry | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const e = entry as Record<string, unknown>;
+  if (typeof e['name'] !== 'string' || typeof e['savedAt'] !== 'string') return null;
+  const r = e['route'];
+  if (!r || typeof r !== 'object') return null;
+  const route = r as Record<string, unknown>;
+  if (typeof route['id'] !== 'string' || !Array.isArray(route['sections'])) return null;
+  return {
+    name: e['name'] as string,
+    savedAt: e['savedAt'] as string,
+    route: normalizeRoute(r as Route),
+  };
+}
+
+function parseSavedRoutesRaw(raw: string | null): { entries: SavedRouteEntry[]; valid: boolean } {
+  if (!raw) return { entries: [], valid: false };
+
   try {
-    const raw = localStorage.getItem(SAVED_ROUTES_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as SavedRouteEntry[]) : [];
+    if (!Array.isArray(parsed)) return { entries: [], valid: false };
+
+    const entries = parsed
+      .map(normalizeSavedRouteEntry)
+      .filter((e): e is SavedRouteEntry => e !== null);
+
+    // Empty arrays are valid data. Non-empty arrays must contain at least
+    // one structurally valid entry to be considered migration-safe.
+    const valid = parsed.length === 0 || entries.length > 0;
+    return { entries, valid };
   } catch {
-    return [];
+    return { entries: [], valid: false };
   }
 }
 
+function loadSavedRoutes(): SavedRouteEntry[] {
+  const versioned = parseSavedRoutesRaw(localStorage.getItem(SAVED_ROUTES_KEY));
+  if (versioned.valid) {
+    return versioned.entries;
+  }
+
+  const legacyRaw = localStorage.getItem(SAVED_ROUTES_KEY_LEGACY);
+  const legacy = parseSavedRoutesRaw(legacyRaw);
+  if (legacy.valid) {
+    // Keep a one-time raw snapshot of legacy data for emergency recovery.
+    backupStorageKeyOnce(SAVED_ROUTES_KEY_LEGACY, SAVED_ROUTES_LEGACY_SNAPSHOT_KEY);
+    // Copy-forward only; never mutate or delete the legacy key.
+    persistSavedRoutes(legacy.entries);
+    return legacy.entries;
+  }
+
+  return [];
+}
+
 function persistSavedRoutes(entries: SavedRouteEntry[]): void {
-  localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(entries));
+  try {
+    localStorage.setItem(SAVED_ROUTES_KEY, JSON.stringify(entries));
+  } catch {
+    // Quota exceeded or storage unavailable — the storageErrorEvent in the route
+    // store will surface a banner for the user if needed.
+  }
 }
 
 // ─── Small icon helpers ────────────────────────────────────────────────────────
@@ -142,12 +199,12 @@ function MapIcon() {
 function GripIcon() {
   return (
     <svg viewBox="0 0 10 16" fill="currentColor" className="w-2.5 h-4" aria-hidden="true">
-      <circle cx="3" cy="3" r="1.3" />
-      <circle cx="7" cy="3" r="1.3" />
-      <circle cx="3" cy="8" r="1.3" />
-      <circle cx="7" cy="8" r="1.3" />
-      <circle cx="3" cy="13" r="1.3" />
-      <circle cx="7" cy="13" r="1.3" />
+      <rect x="1" y="2" width="3" height="3" rx="0.75" />
+      <rect x="6" y="2" width="3" height="3" rx="0.75" />
+      <rect x="1" y="6.5" width="3" height="3" rx="0.75" />
+      <rect x="6" y="6.5" width="3" height="3" rx="0.75" />
+      <rect x="1" y="11" width="3" height="3" rx="0.75" />
+      <rect x="6" y="11" width="3" height="3" rx="0.75" />
     </svg>
   );
 }
@@ -2459,6 +2516,8 @@ export function RoutePlannerPanel({
   const [importStatus, setImportStatus] = useState<'idle' | 'success'>('idle');
   const [importError, setImportError] = useState<string | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
+  /** Plugin route awaiting user confirmation before replacing the active route. */
+  const [pendingImportRoute, setPendingImportRoute] = useState<{ route: Route; info: string } | null>(null);
   const [showImportHelp, setShowImportHelp] = useState(false);
   const importHelpRef = useRef<HTMLDivElement>(null);
   const [mobileImportOpen, setMobileImportOpen] = useState(false);
@@ -2497,17 +2556,22 @@ export function RoutePlannerPanel({
       setImportError(result.error);
       return;
     }
-    onReplaceRoute(result.route);
     const infoParts: string[] = [];
     const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
     infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
     if (result.unmapped > 0) {
       infoParts.push(`preserved ${result.unmapped} task${result.unmapped !== 1 ? 's' : ''} not found in current dataset`);
     }
-    setImportInfo(infoParts.join(', ') + '.');
-    setImportStatus('success');
-    setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
-  }, [allTasks, onReplaceRoute]);
+    const info = infoParts.join(', ') + '.';
+    if (isMeaningfulRoute(route)) {
+      setPendingImportRoute({ route: result.route, info });
+    } else {
+      onReplaceRoute(result.route);
+      setImportInfo(info);
+      setImportStatus('success');
+      setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
+    }
+  }, [allTasks, onReplaceRoute, route]);
 
   const handleMobileImportSubmit = useCallback(() => {
     setImportError(null);
@@ -2522,24 +2586,31 @@ export function RoutePlannerPanel({
       setImportError(result.error);
       return;
     }
-    onReplaceRoute(result.route);
     const infoParts: string[] = [];
     const customNote = result.customCount > 0 ? ` (${result.customCount} custom)` : '';
     infoParts.push(`Imported ${result.imported} item${result.imported !== 1 ? 's' : ''}${customNote}`);
     if (result.unmapped > 0) {
       infoParts.push(`preserved ${result.unmapped} task${result.unmapped !== 1 ? 's' : ''} not found in current dataset`);
     }
-    setImportInfo(infoParts.join(', ') + '.');
-    setMobileImportOpen(false);
-    setMobileImportText('');
-    setImportStatus('success');
-    setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
-  }, [allTasks, onReplaceRoute, mobileImportText]);
+    const info = infoParts.join(', ') + '.';
+    if (isMeaningfulRoute(route)) {
+      setPendingImportRoute({ route: result.route, info });
+    } else {
+      onReplaceRoute(result.route);
+      setImportInfo(info);
+      setMobileImportOpen(false);
+      setMobileImportText('');
+      setImportStatus('success');
+      setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
+    }
+  }, [allTasks, onReplaceRoute, mobileImportText, route]);
 
   // ── Local save/load state ──────────────────────────────────────────────────
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle');
   const [loadMenuOpen, setLoadMenuOpen] = useState(false);
   const [savedRoutes, setSavedRoutes] = useState<SavedRouteEntry[]>(loadSavedRoutes);
+  /** Saved slot entry awaiting user confirmation before replacing the active route. */
+  const [pendingLoadEntry, setPendingLoadEntry] = useState<SavedRouteEntry | null>(null);
   const loadMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2567,9 +2638,14 @@ export function RoutePlannerPanel({
   }, [route]);
 
   const handleLoadRoute = useCallback((entry: SavedRouteEntry) => {
-    onReplaceRoute(entry.route);
-    setLoadMenuOpen(false);
-  }, [onReplaceRoute]);
+    if (isMeaningfulRoute(route)) {
+      setPendingLoadEntry(entry);
+      setLoadMenuOpen(false);
+    } else {
+      onReplaceRoute(entry.route);
+      setLoadMenuOpen(false);
+    }
+  }, [onReplaceRoute, route]);
 
   const handleDeleteSaved = useCallback((name: string) => {
     setSavedRoutes((prev) => {
@@ -3113,6 +3189,64 @@ export function RoutePlannerPanel({
           onReplaceRoute={onReplaceRoute}
           onClose={() => setSpreadsheetImportOpen(false)}
         />
+      )}
+
+      {/* ── Plugin import confirmation banner ─────────────────────────────────── */}
+      {pendingImportRoute !== null && (
+        <div className="px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-300 dark:border-amber-700/50 text-[12.5px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+          <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-500 dark:text-amber-400" aria-hidden="true">
+            <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+          </svg>
+          <span className="flex-1">
+            Route found ({pendingImportRoute.info}) — loading it will replace your current route.
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => {
+                onReplaceRoute(pendingImportRoute.route);
+                setImportInfo(pendingImportRoute.info);
+                setImportStatus('success');
+                setTimeout(() => setImportStatus((s) => (s === 'success' ? 'idle' : s)), 3000);
+                setPendingImportRoute(null);
+              }}
+              className="px-2 py-0.5 text-[11.5px] font-medium bg-wiki-link dark:bg-wiki-link-dark text-white rounded hover:opacity-90 transition-opacity"
+            >
+              Load Route
+            </button>
+            <button
+              onClick={() => setPendingImportRoute(null)}
+              className="px-2 py-0.5 text-[11.5px] font-medium text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Load saved route confirmation banner ──────────────────────────────── */}
+      {pendingLoadEntry !== null && (
+        <div className="px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 border-b border-amber-300 dark:border-amber-700/50 text-[12.5px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+          <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-500 dark:text-amber-400" aria-hidden="true">
+            <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+          </svg>
+          <span className="flex-1">
+            Load saved route <strong>"{pendingLoadEntry.name}"</strong>? This will replace your current route.
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={() => { onReplaceRoute(pendingLoadEntry.route); setPendingLoadEntry(null); }}
+              className="px-2 py-0.5 text-[11.5px] font-medium bg-wiki-link dark:bg-wiki-link-dark text-white rounded hover:opacity-90 transition-opacity"
+            >
+              Load
+            </button>
+            <button
+              onClick={() => setPendingLoadEntry(null)}
+              className="px-2 py-0.5 text-[11.5px] font-medium text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── Route name field ────────────────────────────────────────────── */}

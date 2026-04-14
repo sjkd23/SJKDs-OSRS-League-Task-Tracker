@@ -1,10 +1,20 @@
 import { useState, useCallback, useMemo } from 'react';
-import { loadFromStorage, saveToStorage } from '@/utils/storage';
+import {
+  loadFromStorage,
+  saveToStorage,
+  backupRouteToStorage,
+  backupStorageKeyOnce,
+} from '@/utils/storage';
 import type { Route, RouteItem, RouteLocation, RouteSection } from '@/types/route';
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
-const ROUTE_STORAGE_KEY = 'osrs-lt:route';
+export const ROUTE_STORAGE_KEY_LEGACY = 'osrs-lt:route';
+export const ROUTE_STORAGE_KEY = 'osrs-lt:route:v2';
+/** Backup key — written before every destructive route replacement. */
+export const ROUTE_BACKUP_KEY = 'osrs-lt:route:backup';
+/** One-time snapshot of legacy route data before v2 copy-forward migration. */
+export const ROUTE_LEGACY_SNAPSHOT_KEY = 'osrs-lt:route:pre-v2-backup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,17 +94,53 @@ function migrateRoute(route: Route): Route {
   return route;
 }
 
-function loadRoute(): Route {
-  const saved = loadFromStorage<unknown>(ROUTE_STORAGE_KEY, null);
+/**
+ * Returns true when a route contains at least one item in any section.
+ * Used to guard destructive replacements that should only prompt when the user
+ * has real content to lose.
+ */
+export function isMeaningfulRoute(route: Route): boolean {
+  return route.sections.some((s) => s.items.length > 0);
+}
+
+/**
+ * Apply structural migrations and fill in missing routeItemIds.
+ * Safe to call on any route object — both operations are no-ops if not needed.
+ * Exported so callers that load routes from named save slots can normalize them
+ * before use without duplicating migration logic.
+ */
+export function normalizeRoute(route: Route): Route {
+  return ensureRouteItemIds(migrateRoute(route));
+}
+
+function parseStoredRoute(value: unknown): Route | null {
   if (
-    saved !== null &&
-    typeof saved === 'object' &&
-    !Array.isArray(saved) &&
-    typeof (saved as Route).id === 'string' &&
-    Array.isArray((saved as Route).sections)
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Route).id === 'string' &&
+    Array.isArray((value as Route).sections)
   ) {
-    return ensureRouteItemIds(migrateRoute(saved as Route));
+    return normalizeRoute(value as Route);
   }
+  return null;
+}
+
+function loadRoute(): Route {
+  const versioned = parseStoredRoute(loadFromStorage<unknown>(ROUTE_STORAGE_KEY, null));
+  if (versioned) {
+    return versioned;
+  }
+
+  const legacy = parseStoredRoute(loadFromStorage<unknown>(ROUTE_STORAGE_KEY_LEGACY, null));
+  if (legacy) {
+    // Keep a one-time raw snapshot of the legacy key for emergency recovery.
+    backupStorageKeyOnce(ROUTE_STORAGE_KEY_LEGACY, ROUTE_LEGACY_SNAPSHOT_KEY);
+    // Copy-forward only; never mutate or delete the legacy key.
+    saveToStorage(ROUTE_STORAGE_KEY, legacy);
+    return legacy;
+  }
+
   return createDefaultRoute();
 }
 
@@ -404,6 +450,9 @@ export function useRouteStore() {
 
   /** Replaces the current route wholesale. Used by the import flow. */
   const replaceRoute = useCallback((newRoute: Route) => {
+    // Back up the current active route before replacing it, so the user can
+    // recover from accidental imports/overwrites. Failure is non-fatal.
+    backupRouteToStorage(ROUTE_STORAGE_KEY, ROUTE_BACKUP_KEY);
     saveToStorage(ROUTE_STORAGE_KEY, newRoute);
     setRoute(newRoute);
   }, []);

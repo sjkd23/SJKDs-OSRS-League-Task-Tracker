@@ -106,12 +106,12 @@ function SmallPin({ active, hasLocation }: { active: boolean; hasLocation: boole
 function GripIcon() {
   return (
     <svg viewBox="0 0 10 16" fill="currentColor" className="w-2 h-3.5" aria-hidden="true">
-      <circle cx="3" cy="3" r="1.2" />
-      <circle cx="7" cy="3" r="1.2" />
-      <circle cx="3" cy="8" r="1.2" />
-      <circle cx="7" cy="8" r="1.2" />
-      <circle cx="3" cy="13" r="1.2" />
-      <circle cx="7" cy="13" r="1.2" />
+      <rect x="1" y="2" width="3" height="3" rx="0.75" />
+      <rect x="6" y="2" width="3" height="3" rx="0.75" />
+      <rect x="1" y="6.5" width="3" height="3" rx="0.75" />
+      <rect x="6" y="6.5" width="3" height="3" rx="0.75" />
+      <rect x="1" y="11" width="3" height="3" rx="0.75" />
+      <rect x="6" y="11" width="3" height="3" rx="0.75" />
     </svg>
   );
 }
@@ -127,6 +127,8 @@ interface SortableMapRowProps {
   isHovered: boolean;
   isCompleted: boolean;
   isRunMode: boolean;
+  /** Running cumulative league points up to and including this task. */
+  cumulativePts: number;
   onSelect: () => void;
   onHover: (id: string | null) => void;
   /** Click the pin icon on the left to activate placement for this item. */
@@ -142,6 +144,7 @@ function SortableMapRow({
   isHovered,
   isCompleted,
   isRunMode,
+  cumulativePts,
   onSelect,
   onHover,
   onPlaceOnMap,
@@ -238,6 +241,9 @@ function SortableMapRow({
             {'\u2713'}
           </span>
         )}
+        <span className="flex-shrink-0 text-[11px] tabular-nums text-wiki-muted/60 dark:text-wiki-muted-dark/60">
+          {cumulativePts}
+        </span>
       </button>
 
       {/* Reorder grip - RIGHT side.
@@ -420,6 +426,19 @@ export function MapRouteList({
     }
   }
 
+  // Build cumulative league points for each visible route item (in section/item display order)
+  let _cumPts = 0;
+  const cumulativePtsMap = new Map<string, number>();
+  for (const section of sections) {
+    for (const item of section.items) {
+      if (!itemIndexMap.has(item.routeItemId)) continue;
+      if (!item.isCustom) {
+        _cumPts += taskMap.get(item.taskId)?.points ?? 0;
+      }
+      cumulativePtsMap.set(item.routeItemId, _cumPts);
+    }
+  }
+
   // --- Empty state -----------------------------------------------------------
   if (visibleCount === 0) {
     return (
@@ -483,6 +502,11 @@ export function MapRouteList({
               );
               if (visibleSectionItems.length === 0) return null;
 
+              const sectionPts = visibleSectionItems.reduce((sum, it) => {
+                if (it.isCustom) return sum;
+                return sum + (taskMap.get(it.taskId)?.points ?? 0);
+              }, 0);
+
               return (
                 <div key={section.id}>
                   {visibleSections.length > 1 && (
@@ -491,7 +515,7 @@ export function MapRouteList({
                         {section.name}
                       </span>
                       <span className="text-[11px] font-medium text-wiki-muted dark:text-wiki-muted-dark flex-shrink-0 tabular-nums">
-                        {visibleSectionItems.length}
+                        {visibleSectionItems.length} &middot; {sectionPts} pts
                       </span>
                     </div>
                   )}
@@ -521,6 +545,7 @@ export function MapRouteList({
                         isHovered={isHovered}
                         isCompleted={isCompleted}
                         isRunMode={isRunMode}
+                        cumulativePts={cumulativePtsMap.get(item.routeItemId) ?? 0}
                         onSelect={() => {
                           setHoveredItemId(null);
                           onSelectItem(item.routeItemId);

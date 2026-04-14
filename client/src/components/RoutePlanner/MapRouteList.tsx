@@ -6,8 +6,7 @@
  * - Drag the grip handle (RIGHT of each row) within the list to reorder.
  * - Drag the grip handle OUT of the list and release over the map canvas to activate
  *   placement mode (detected via final pointer position vs. map bounding rect).
- * - Click a row body to select/focus the item on the map.
- * - Detail pane at the bottom shows focused/hovered item info.
+ * - Click a row body to select/focus the item on the map; the selected row expands inline to show task details.
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
@@ -127,12 +126,19 @@ interface SortableMapRowProps {
   isHovered: boolean;
   isCompleted: boolean;
   isRunMode: boolean;
+  isCustom: boolean;
   /** Running cumulative league points up to and including this task. */
   cumulativePts: number;
   onSelect: () => void;
   onHover: (id: string | null) => void;
   /** Click the pin icon on the left to activate placement for this item. */
   onPlaceOnMap: () => void;
+  /** Task detail fields shown inline when this row is focused/selected. */
+  detailDesc?: string | null;
+  detailDescParts?: TaskView['descriptionParts'];
+  detailReqs?: string | null;
+  detailReqsParts?: TaskView['requirementsParts'];
+  detailNote?: string | null;
 }
 
 function SortableMapRow({
@@ -144,10 +150,16 @@ function SortableMapRow({
   isHovered,
   isCompleted,
   isRunMode,
+  isCustom,
   cumulativePts,
   onSelect,
   onHover,
   onPlaceOnMap,
+  detailDesc,
+  detailDescParts,
+  detailReqs,
+  detailReqsParts,
+  detailNote,
 }: SortableMapRowProps) {
   const {
     attributes,
@@ -170,7 +182,7 @@ function SortableMapRow({
       style={style}
       data-map-list-id={item.routeItemId}
       className={[
-        'flex items-center border-b border-wiki-border/60 dark:border-wiki-border-dark/60 select-none',
+        'border-b border-wiki-border/60 dark:border-wiki-border-dark/60 select-none',
         isFocused
           ? 'bg-blue-50/50 dark:bg-blue-900/20 border-l-[3px] border-l-[#2563eb] dark:border-l-[#60a5fa]'
           : isHovered
@@ -178,6 +190,7 @@ function SortableMapRow({
           : '',
       ].filter(Boolean).join(' ')}
     >
+      <div className="flex items-center">
       {/* Pin placement button - LEFT side.
           Click to activate placement mode. Color indicates whether a pin exists. */}
       {!isRunMode ? (
@@ -203,7 +216,7 @@ function SortableMapRow({
         </span>
       )}
 
-      {/* Clickable row body - selects item, shows detail in pane */}
+      {/* Clickable row body - selects item */}
       <button
         className="flex-1 min-w-0 flex items-center gap-2 py-2 text-left cursor-pointer"
         onClick={onSelect}
@@ -259,6 +272,44 @@ function SortableMapRow({
         >
           <GripIcon />
         </span>
+      )}
+      </div>
+      {isFocused && (
+        <div className="pl-9 pr-3 pb-2.5 pt-1">
+          {!isPinnable && !isRunMode && (
+            <p className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark italic mb-1.5">
+              No pin yet — click the pin icon to the left to place
+            </p>
+          )}
+          {detailDesc && (
+            <div className="text-[12px] text-wiki-text dark:text-wiki-text-dark leading-relaxed mb-1.5 break-words">
+              {detailDescParts && detailDescParts.length > 0 ? (
+                <RichText parts={detailDescParts} />
+              ) : (
+                detailDesc
+              )}
+            </div>
+          )}
+          {detailReqs && !isCustom && (
+            <div className="flex items-start gap-1.5 mb-1.5">
+              <span className="flex-shrink-0 text-[11px] font-bold uppercase tracking-wider text-wiki-text/65 dark:text-wiki-text-dark/65 mt-[2px]">
+                Reqs:
+              </span>
+              <div className="text-[12px] text-wiki-text/80 dark:text-wiki-text-dark/75 leading-snug">
+                <RequirementsCell
+                  requirementsText={detailReqs}
+                  requirementsParts={detailReqsParts}
+                />
+              </div>
+            </div>
+          )}
+          {detailNote && (
+            <p className="text-[12px] italic text-wiki-text/70 dark:text-wiki-text-dark/65 leading-snug break-words">
+              <span className="font-bold not-italic text-[11px] uppercase tracking-wider mr-1">Note:</span>
+              {detailNote}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -346,85 +397,6 @@ export function MapRouteList({
     },
     [getMapRect, onStartPlacement, allItems, onReorderItems],
   );
-
-  // --- Detail pane data ------------------------------------------------------
-  const detailId = focusedItemId ?? hoveredItemId;
-
-  type DetailData = {
-    name: string;
-    desc: string | null;
-    descParts?: TaskView['descriptionParts'];
-    reqs: string | null;
-    reqsParts?: TaskView['requirementsParts'];
-    note: string | null;
-    globalPos: number;
-    isPinnable: boolean;
-    isCompleted: boolean;
-    isFocused: boolean;
-    isCustom: boolean;
-  };
-
-  let detail: DetailData | null = null;
-
-  if (detailId) {
-    outer: for (const section of sections) {
-      for (const item of section.items) {
-        if (item.routeItemId !== detailId) continue;
-        const globalPos = (itemIndexMap.get(item.routeItemId) ?? 0) + 1;
-        const isPinnable = pinnableIds.has(item.routeItemId);
-        const isFocused = item.routeItemId === focusedItemId;
-
-        if (item.isCustom) {
-          detail = {
-            name: item.customName ?? '(custom task)',
-            desc: item.customDescription ?? null,
-            reqs: null,
-            note: item.note ?? null,
-            globalPos,
-            isPinnable,
-            isCompleted: false,
-            isFocused,
-            isCustom: true,
-          };
-        } else {
-          const task = taskMap.get(item.taskId);
-          if (task) {
-            detail = {
-              name: task.name,
-              desc: task.description || null,
-              descParts: task.descriptionParts,
-              reqs: isNaReqs(task.requirementsText) ? null : task.requirementsText,
-              reqsParts: task.requirementsParts,
-              note: item.note ?? null,
-              globalPos,
-              isPinnable,
-              isCompleted: task.completed ?? false,
-              isFocused,
-              isCustom: false,
-            };
-          } else {
-            // Unresolved task — show what identity info we can derive.
-            const snapName = item._snap?.name ?? (() => {
-              const m = item.taskId.match(/^task-\d+-(\d+)$/);
-              return m ? `Preserved task (sortId ${m[1]})` : 'Preserved task';
-            })();
-            detail = {
-              name: snapName,
-              desc: 'This task could not be found in the current dataset.',
-              reqs: null,
-              note: item.note ?? null,
-              globalPos,
-              isPinnable,
-              isCompleted: false,
-              isFocused,
-              isCustom: false,
-            };
-          }
-        }
-        break outer;
-      }
-    }
-  }
 
   // Build cumulative league points for each visible route item (in section/item display order)
   let _cumPts = 0;
@@ -534,6 +506,18 @@ export function MapRouteList({
                           return m ? `Task #${m[1]}` : 'Preserved task';
                         })();
 
+                    const detailDesc = item.isCustom
+                      ? (item.customDescription ?? null)
+                      : task
+                      ? (task.description || null)
+                      : 'This task could not be found in the current dataset.';
+                    const detailDescParts = !item.isCustom && task ? task.descriptionParts : undefined;
+                    const detailReqs = !item.isCustom && task && !isNaReqs(task.requirementsText)
+                      ? task.requirementsText
+                      : null;
+                    const detailReqsParts = !item.isCustom && task ? task.requirementsParts : undefined;
+                    const detailNote = item.note ?? null;
+
                     return (
                       <SortableMapRow
                         key={item.routeItemId}
@@ -545,6 +529,7 @@ export function MapRouteList({
                         isHovered={isHovered}
                         isCompleted={isCompleted}
                         isRunMode={isRunMode}
+                        isCustom={!!item.isCustom}
                         cumulativePts={cumulativePtsMap.get(item.routeItemId) ?? 0}
                         onSelect={() => {
                           setHoveredItemId(null);
@@ -554,6 +539,11 @@ export function MapRouteList({
                           id === null && prev !== item.routeItemId ? prev : id,
                         )}
                         onPlaceOnMap={() => onStartPlacement(item.routeItemId)}
+                        detailDesc={detailDesc}
+                        detailDescParts={detailDescParts}
+                        detailReqs={detailReqs}
+                        detailReqsParts={detailReqsParts}
+                        detailNote={detailNote}
                       />
                     );
                   })}
@@ -562,101 +552,6 @@ export function MapRouteList({
             })}
           </div>
         </SortableContext>
-
-        {/* Detail pane */}
-        <div
-          className={[
-            'flex-shrink-0 border-t-2 border-wiki-border dark:border-wiki-border-dark overflow-hidden',
-            detail?.isFocused
-              ? 'bg-blue-50 dark:bg-blue-900/10'
-              : 'bg-wiki-article dark:bg-wiki-article-dark',
-          ].join(' ')}
-          style={{ minHeight: '96px', maxHeight: '180px' }}
-        >
-          {detail ? (
-              <div className="px-3 py-3 h-full overflow-y-auto">
-              <div className="flex items-start gap-2 mb-1">
-                {detail.isPinnable && (
-                  <svg width="9" height="12" viewBox="0 0 24 30" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="flex-shrink-0 mt-[3px]">
-                    <path
-                      d="M12 1C6.477 1 2 5.477 2 11c0 4.75 4.5 10.5 10 18C18 21.5 22 15.75 22 11 22 5.477 17.523 1 12 1z"
-                      fill={detail.isFocused ? '#2563eb' : '#e82424'}
-                      stroke={detail.isFocused ? '#1e40af' : '#8b1a1a'}
-                      strokeWidth="1.5"
-                    />
-                  </svg>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className={[
-                    'font-semibold text-[14px] leading-snug break-words',
-                    detail.isFocused
-                      ? 'text-[#1e3a8a] dark:text-[#93c5fd]'
-                      : 'text-wiki-text dark:text-wiki-text-dark',
-                  ].join(' ')}>
-                    <span className={[
-                      'text-[11px] tabular-nums mr-1.5 font-bold',
-                      detail.isFocused
-                        ? 'text-[#2563eb] dark:text-[#60a5fa]'
-                        : 'text-wiki-muted dark:text-wiki-muted-dark',
-                    ].join(' ')}>
-                      #{detail.globalPos}
-                    </span>
-                    {detail.name}
-                    {detail.isCompleted && (
-                      <span className="ml-1.5 text-[11px] text-green-700 dark:text-green-400 font-semibold not-italic">
-                        {'\u2713'}
-                      </span>
-                    )}
-                  </p>
-                  {!detail.isPinnable && !isRunMode && (
-                    <p className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark mt-0.5 italic">
-                      No pin yet - click the pin on the left to place
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {detail.desc && (
-                <div className="text-[12px] text-wiki-text dark:text-wiki-text-dark leading-relaxed mb-2 break-words">
-                  {detail.descParts && detail.descParts.length > 0 ? (
-                    <RichText parts={detail.descParts} />
-                  ) : (
-                    detail.desc
-                  )}
-                </div>
-              )}
-
-              {detail.reqs && !detail.isCustom && (
-                <div className="flex items-start gap-1.5 mb-1.5">
-                  <span className="flex-shrink-0 text-[11px] font-bold uppercase tracking-wider text-wiki-text/65 dark:text-wiki-text-dark/65 mt-[2px]">
-                    Reqs:
-                  </span>
-                  <div className="text-[12px] text-wiki-text/80 dark:text-wiki-text-dark/75 leading-snug">
-                    <RequirementsCell
-                      requirementsText={detail.reqs}
-                      requirementsParts={detail.reqsParts}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {detail.note && (
-                <p className="text-[12px] italic text-wiki-text/70 dark:text-wiki-text-dark/65 leading-snug break-words">
-                  <span className="font-bold not-italic text-[11px] uppercase tracking-wider mr-1">Note:</span>
-                  {detail.note}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full px-3 py-3">
-              <p className="text-[11px] text-wiki-muted dark:text-wiki-muted-dark italic text-center leading-snug">
-                {isRunMode
-                  ? 'Click a task to select it'
-                  : 'Click pin to place on map. Click row to select. Drag grip to reorder or drop on map.'}
-              </p>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* DragOverlay - ghost that follows the cursor during drag */}

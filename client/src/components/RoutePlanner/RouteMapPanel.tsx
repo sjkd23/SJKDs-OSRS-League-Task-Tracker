@@ -20,7 +20,7 @@
  *   effects no-op, and when the init effect creates a fresh map the tile and
  *   marker effects automatically re-run.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import type { RouteLocation } from '@/types/route';
 import {
@@ -59,19 +59,24 @@ function makeMarkerIcon(
   listPos: number,
   isSelected: boolean,
   isCompleted: boolean,
+  isNextTask = false,
 ): L.DivIcon {
-  const fill   = isSelected  ? '#0052cc'  // wiki-style blue for selected
-               : isCompleted ? '#3d7a3d'
-               :               '#e82424'; // wiki-style red (ignore isCustom so map pins matched tracker layout color)
+  // Priority: selected > next-task > completed > default
+  const fill   = isSelected  ? '#0052cc'  // blue — selected
+               : isNextTask  ? '#d95e00'  // orange — next destination
+               : isCompleted ? '#3d7a3d'  // green — completed
+               :               '#e82424'; // red — normal
   const stroke = isSelected  ? '#003a99'
+               : isNextTask  ? '#8f3a00'
                : isCompleted ? '#1a4a1a'
                :               '#8b1a1a';
   const n     = String(listPos).slice(0, 3);
   const fsize = n.length > 2 ? 7 : 8;
 
-  // Selected markers are slightly larger to stand out clearly.
-  const w = isSelected ? 28 : 24;
-  const h = isSelected ? 35 : 30;
+  // Selected markers are largest; next-task markers are slightly larger than
+  // normal so they stand out at a glance without competing with the selected pin.
+  const w = isSelected ? 28 : isNextTask ? 26 : 24;
+  const h = isSelected ? 35 : isNextTask ? 32 : 30;
   const cx = w / 2;
 
   const html = [
@@ -176,6 +181,7 @@ export function RouteMapPanel({
   const [map, setMap] = useState<L.Map | null>(null);
 
   const [fitTrigger, setFitTrigger] = useState(0);
+  const [showLines, setShowLines] = useState(true);
 
   const hasAnyMarkers = markers.length > 0;
 
@@ -290,18 +296,31 @@ export function RouteMapPanel({
     leafletMarkersRef.current.forEach((lm) => map.removeLayer(lm));
     leafletMarkersRef.current.clear();
 
+    // Determine the next mapped task after the focused one so its pin can be
+    // styled distinctly. Computed once here so every marker below can compare.
+    let nextRouteItemId: string | null = null;
+    if (focusedItemId) {
+      const focusedIdx = markers.findIndex((m) => m.routeItemId === focusedItemId);
+      if (focusedIdx >= 0 && focusedIdx < markers.length - 1) {
+        nextRouteItemId = markers[focusedIdx + 1].routeItemId;
+      }
+    }
+
     // Add markers from all route items with explicit coordinates.
     markers.forEach((m) => {
+      const isSelected = m.routeItemId === focusedItemId;
+      const isNextTask = m.routeItemId === nextRouteItemId;
       const pos  = osrsToLatLng(map, m.location.x, m.location.y);
       const icon = makeMarkerIcon(
         m.listPos,
-        m.routeItemId === focusedItemId,
+        isSelected,
         m.isCompleted,
+        isNextTask,
       );
       const marker = L.marker(pos, {
         icon,
         bubblingMouseEvents: false,
-        zIndexOffset: m.routeItemId === focusedItemId ? 1000 : 0,
+        zIndexOffset: isSelected ? 1000 : isNextTask ? 500 : 0,
       });
       // Tooltip shown on hover — click is reserved for selection.
       marker.bindTooltip(markerTooltipHtml(m), {
@@ -315,6 +334,111 @@ export function RouteMapPanel({
       leafletMarkersRef.current.set(m.routeItemId, marker);
     });
   }, [map, markers, focusedItemId, stableOnMarkerClick]);
+
+  // ── Base route polyline ────────────────────────────────────────────────────
+  // Drawn as a multi-polyline that skips the currently highlighted segment
+  // (focusedIdx → focusedIdx+1). This ensures the yellow base line is never
+  // rendered underneath the blue highlight, preventing the muddy yellow-blue
+  // bleed caused by drawing two semi-transparent lines over the same segment.
+  const basePolylineRef = useRef<L.Polyline | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    if (basePolylineRef.current) {
+      map.removeLayer(basePolylineRef.current);
+      basePolylineRef.current = null;
+    }
+
+    if (markers.length < 2) return;
+
+    const positions = markers.map((m) => osrsToLatLng(map, m.location.x, m.location.y));
+
+    // Find the highlighted segment so we can leave a gap in the base line.
+    let highlightIdx = -1;
+    if (focusedItemId) {
+      const idx = markers.findIndex((m) => m.routeItemId === focusedItemId);
+      if (idx >= 0 && idx < markers.length - 1) {
+        highlightIdx = idx;
+      }
+    }
+
+    // Build segments: one or two runs of positions with the highlighted gap removed.
+    // L.polyline accepts a nested array (L.LatLng[][]) for multi-segment polylines.
+    const segments: L.LatLng[][] =
+      highlightIdx >= 0
+        ? [
+            positions.slice(0, highlightIdx + 1),  // up to and including the "from" pin
+            positions.slice(highlightIdx + 1),      // from the "to" pin onward
+          ].filter((s) => s.length >= 2)            // drop degenerate single-point runs
+        : [positions];                              // no highlight — draw the full line
+
+    const baseLine = L.polyline(segments as unknown as L.LatLngExpression[][], {
+      color:       '#e8b800',
+      weight:      2,
+      opacity:     showLines ? 0.7 : 0,
+      interactive: false,
+    });
+    baseLine.addTo(map);
+    basePolylineRef.current = baseLine;
+  }, [map, markers, showLines, focusedItemId]);
+
+  // ── Highlight segment (selected → next) ──────────────────────────────────
+  // Uses setLatLngs() to update geometry in-place rather than removing and
+  // recreating the layer on every selection change. This eliminates the brief
+  // wrong/blank frame visible during rapid navigation: Leaflet mutates the SVG
+  // path element atomically with no remove+addTo cycle, so there is never an
+  // intermediate state where the old layer is gone and the new one not yet drawn.
+  //
+  // A second ref tracks which map instance owns the polyline. When the Leaflet
+  // map is recreated (e.g. React StrictMode double-invoke), we detect the
+  // mismatch and recreate the polyline on the new map.
+  const highlightPolylineRef    = useRef<L.Polyline | null>(null);
+  const highlightPolylineMapRef = useRef<L.Map | null>(null);
+
+  useEffect(() => {
+    if (!map) {
+      // Map was destroyed — the whole L.Map instance is gone, so no explicit
+      // removeLayer is needed. Just reset refs so the next map gets a fresh layer.
+      highlightPolylineRef.current    = null;
+      highlightPolylineMapRef.current = null;
+      return;
+    }
+
+    // Compute endpoints for the current selection (empty array = hidden).
+    const endpoints: L.LatLng[] = [];
+    if (focusedItemId && markers.length >= 2) {
+      const idx = markers.findIndex((m) => m.routeItemId === focusedItemId);
+      if (idx >= 0 && idx < markers.length - 1) {
+        endpoints.push(osrsToLatLng(map, markers[idx].location.x,     markers[idx].location.y));
+        endpoints.push(osrsToLatLng(map, markers[idx + 1].location.x, markers[idx + 1].location.y));
+      }
+    }
+
+    if (highlightPolylineRef.current && highlightPolylineMapRef.current === map) {
+      // Same Leaflet instance — mutate geometry in-place, no layer churn.
+      highlightPolylineRef.current.setLatLngs(endpoints);
+    } else {
+      // First run or the map was replaced — clean up old layer and create fresh.
+      if (highlightPolylineRef.current && highlightPolylineMapRef.current) {
+        highlightPolylineMapRef.current.removeLayer(highlightPolylineRef.current);
+      }
+      const line = L.polyline(endpoints, {
+        color:       '#1a6fc4',
+        weight:      4,
+        opacity:     showLines ? 0.88 : 0,
+        interactive: false,
+      });
+      line.addTo(map);
+      highlightPolylineRef.current    = line;
+      highlightPolylineMapRef.current = map;
+    }
+    // Apply visibility to an already-existing layer (covers the showLines toggle
+    // case where geometry didn't change but opacity needs to update).
+    highlightPolylineRef.current?.setStyle({ opacity: showLines ? 0.88 : 0 });
+    // No cleanup function: the polyline is NOT removed on every dependency
+    // change. Removal/reset happens only in the map===null branch above.
+  }, [map, markers, focusedItemId, showLines]);
 
   // ── Placement clicks (map surface) ───────────────────────────────────────
   useEffect(() => {
@@ -355,6 +479,17 @@ export function RouteMapPanel({
     map.flyTo(pos, Math.max(map.getZoom(), 8), { duration: 0.7 });
   }, [map, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Focused index (prev/next navigation) ────────────────────────────────────
+  const focusedIdx = useMemo(() => {
+    if (!focusedItemId) return -1;
+    return markers.findIndex((m) => m.routeItemId === focusedItemId);
+  }, [markers, focusedItemId]);
+
+  const prevId = focusedIdx > 0 ? markers[focusedIdx - 1].routeItemId : null;
+  const nextId = focusedIdx >= 0 && focusedIdx < markers.length - 1
+    ? markers[focusedIdx + 1].routeItemId
+    : null;
+
   // ── Fit view to markers ────────────────────────────────────────────────────
   const markersRef = useRef(markers);
   markersRef.current = markers;
@@ -387,6 +522,16 @@ export function RouteMapPanel({
       <div className="absolute bottom-2 right-2 z-[1000] flex flex-col items-end gap-1 pointer-events-auto">
         {hasAnyMarkers && (
           <button
+            onClick={() => setShowLines((v) => !v)}
+            title={showLines ? 'Hide route lines' : 'Show route lines'}
+            className="px-2 py-1 text-[10px] font-semibold border shadow-sm transition-colors bg-wiki-surface dark:bg-wiki-surface-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark"
+            style={{ color: showLines ? undefined : 'var(--color-wiki-muted, #6b7280)' }}
+          >
+            Lines: {showLines ? 'On' : 'Off'}
+          </button>
+        )}
+        {hasAnyMarkers && (
+          <button
             onClick={() => setFitTrigger((t) => t + 1)}
             title="Fit view to route markers"
             className="px-2 py-1 text-[10px] font-semibold border shadow-sm bg-wiki-surface dark:bg-wiki-surface-dark text-wiki-text dark:text-wiki-text-dark border-wiki-border dark:border-wiki-border-dark hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark transition-colors"
@@ -398,6 +543,40 @@ export function RouteMapPanel({
           Tiles © Explv / Jagex
         </span>
       </div>
+
+      {/* ── Overlay: prev / next navigation (bottom-centre) ────────────────── */}
+      {hasAnyMarkers && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[1000] flex flex-row gap-2 pointer-events-auto">
+          <button
+            onClick={() => prevId && onMarkerClick(prevId)}
+            disabled={!prevId}
+            title="Previous step"
+            className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
+              bg-wiki-surface dark:bg-wiki-surface-dark
+              text-wiki-text dark:text-wiki-text-dark
+              border-wiki-border dark:border-wiki-border-dark
+              hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
+              disabled:opacity-40 disabled:cursor-not-allowed
+              disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
+          >
+            &#8592; Prev
+          </button>
+          <button
+            onClick={() => nextId && onMarkerClick(nextId)}
+            disabled={!nextId}
+            title="Next step"
+            className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
+              bg-wiki-surface dark:bg-wiki-surface-dark
+              text-wiki-text dark:text-wiki-text-dark
+              border-wiki-border dark:border-wiki-border-dark
+              hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
+              disabled:opacity-40 disabled:cursor-not-allowed
+              disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
+          >
+            Next &#8594;
+          </button>
+        </div>
+      )}
 
       {/* ── Empty state: no markers at all ─────────────────────────────────── */}
       {!hasAnyMarkers && (

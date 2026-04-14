@@ -1407,8 +1407,12 @@ function TableSection({
         <TableSectionEndDropTarget sectionId={section.id} />
       )}
 
-      {/* Empty section drop target — visible when no items exist */}
-      {!isRunMode && !isDraggingSection && section.items.length === 0 && !previewForSection && (
+      {/* Empty section drop target — visible when no items exist.
+           Must remain mounted while isDragActive, even when crossSectionPreview
+           targets this section. Unmounting it causes the droppable to vanish,
+           which clears event.over, which clears the preview, which remounts the
+           droppable — a tight render loop that flickers the whole section. */}
+      {!isRunMode && !isDraggingSection && section.items.length === 0 && (
         <TableEmptySectionDropTarget sectionId={section.id} />
       )}
 
@@ -2139,8 +2143,10 @@ function MobileRouteSection({
       {/* Add custom task */}
       {!isRunMode && !isDraggingSection && (
         <>
-          {/* Empty section drop target — visible when no items exist */}
-          {section.items.length === 0 && !previewForSection && (
+          {/* Empty section drop target — visible when no items exist.
+               Must remain mounted while a drag is active to prevent the
+               flicker loop (see TableEmptySectionDropTarget note above). */}
+          {section.items.length === 0 && (
             <MobileEmptySectionDropTarget sectionId={section.id} />
           )}
           {addingCustomToSection === section.id ? (

@@ -204,6 +204,15 @@
     filter: none !important;
     background-color: #1a2840 !important;
   }
+  /* Keep req-na-cell in sync with the addable row hover color.
+     Without this, the cell's own !important background-color (#ebe5d6 beige)
+     overrides the row's hover blue, leaving the N/A cell visually mismatched. */
+  .wikitable tbody tr.task-addable:hover .req-na-cell {
+    background-color: #e8f0ff !important;
+  }
+  .dark .wikitable tbody tr.task-addable:hover .req-na-cell {
+    background-color: #1a2840 !important;
+  }
   .wikitable tbody tr.task-addable:focus-visible {
     outline: 2px solid #3b82f6;
     outline-offset: -2px;

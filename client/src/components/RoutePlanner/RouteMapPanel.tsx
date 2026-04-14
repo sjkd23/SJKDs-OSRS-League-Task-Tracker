@@ -219,10 +219,29 @@ export function RouteMapPanel({
     return () => container.removeEventListener('mousedown', onMouseDown);
   }, []);
 
-  // ── Resize invalidation (re-measure when parent changes our height) ─────────
+  // ── Resize invalidation (re-measure on any container dimension change) ──────
+  // A ResizeObserver on the container div fires whenever the element's rendered
+  // size changes — including width changes from the plannerWide toggle in App.tsx
+  // and height changes from the vertical drag-resize handle. This replaces the
+  // previous containerHeight-only effect, which missed width-only changes and
+  // caused Leaflet to load tiles for the wrong (stale) viewport size.
+  useEffect(() => {
+    if (!map) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+
+  // Belt-and-suspenders: also invalidate when the explicit height prop changes.
+  // ResizeObserver covers this case too, but the prop-based trigger fires
+  // synchronously within the same React commit phase which avoids a brief flash
+  // if the rAF in ResizeObserver fires slightly after the next paint.
   useEffect(() => {
     if (!map || containerHeight === undefined) return;
-    // Use rAF so the browser has applied the new CSS size before we measure.
     const raf = requestAnimationFrame(() => map.invalidateSize());
     return () => cancelAnimationFrame(raf);
   }, [map, containerHeight]);

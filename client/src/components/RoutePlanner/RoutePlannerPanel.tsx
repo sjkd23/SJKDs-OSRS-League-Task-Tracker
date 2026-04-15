@@ -2344,9 +2344,11 @@ export function RoutePlannerPanel({
           isCustom: item.isCustom ?? false,
           isCompleted,
           description: task?.description ?? item.customDescription,
+          descriptionParts: task?.descriptionParts,
           notes: item.note,
           // Omit requirements that are N/A-ish so the tooltip stays clean.
           requirements: isNaReqs(task?.requirementsText) ? undefined : task?.requirementsText,
+          requirementsParts: isNaReqs(task?.requirementsText) ? undefined : task?.requirementsParts,
         });
       }
     }

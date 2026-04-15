@@ -23,6 +23,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import L from 'leaflet';
 import type { RouteLocation } from '@/types/route';
+import type { RichPart } from '@/types/task';
+import { RichText } from '@/components/RichText/RichText';
+import { RequirementsCell } from '@/components/TaskRow/RequirementsCell';
 import {
   osrsToLatLng,
   latLngToOsrs,
@@ -47,10 +50,14 @@ export interface MarkerViewModel {
   isCompleted: boolean;
   /** Optional longer description for the task. */
   description?: string;
+  /** Rich-text parts for the description (when available). */
+  descriptionParts?: RichPart[];
   /** Optional user notes for this specific route item. */
   notes?: string;
   /** Optional requirements string (e.g. from task definitions). */
   requirements?: string;
+  /** Rich-text parts for the requirements (when available). */
+  requirementsParts?: RichPart[];
 }
 
 // ─── Marker icon factory ──────────────────────────────────────────────────────
@@ -182,6 +189,9 @@ export function RouteMapPanel({
 
   const [fitTrigger, setFitTrigger] = useState(0);
   const [showLines, setShowLines] = useState(true);
+
+  /** Pixel position (container-relative) of the currently selected marker, updated on map move/zoom. */
+  const [selectedMarkerPt, setSelectedMarkerPt] = useState<{ x: number; y: number } | null>(null);
 
   const hasAnyMarkers = markers.length > 0;
 
@@ -479,6 +489,33 @@ export function RouteMapPanel({
     map.flyTo(pos, Math.max(map.getZoom(), 8), { duration: 0.7 });
   }, [map, focusedItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Track selected marker pixel position (for detail popup overlay) ─────────
+  // Re-computed on every map move/zoom so the popup stays anchored to the pin.
+  useEffect(() => {
+    if (!map || !focusedItemId) {
+      setSelectedMarkerPt(null);
+      return;
+    }
+    const target = markers.find((m) => m.routeItemId === focusedItemId);
+    if (!target) {
+      setSelectedMarkerPt(null);
+      return;
+    }
+
+    const latlng = osrsToLatLng(map, target.location.x, target.location.y);
+
+    function updatePt() {
+      const pt = map!.latLngToContainerPoint(latlng);
+      setSelectedMarkerPt({ x: pt.x, y: pt.y });
+    }
+
+    updatePt();
+    map.on('move zoom', updatePt);
+    return () => {
+      map.off('move zoom', updatePt);
+    };
+  }, [map, focusedItemId, markers]);
+
   // ── Focused index (prev/next navigation) ────────────────────────────────────
   const focusedIdx = useMemo(() => {
     if (!focusedItemId) return -1;
@@ -577,6 +614,98 @@ export function RouteMapPanel({
           </button>
         </div>
       )}
+
+      {/* ── Selected marker detail card ──────────────────────────────────────── */}
+      {selectedMarkerPt && (() => {
+        const focused = markers.find((m) => m.routeItemId === focusedItemId);
+        if (!focused) return null;
+
+        // Selected marker icon is 28×35 px; anchor is at its bottom-centre.
+        // The card should sit above the pin body with a small gap.
+        const MARKER_H = 35;
+        const GAP      = 6;
+
+        const hasBody = focused.description || focused.requirements || focused.notes;
+
+        return (
+          <div
+            className="absolute z-[1001] pointer-events-none"
+            style={{
+              left: selectedMarkerPt.x,
+              top:  selectedMarkerPt.y - MARKER_H - GAP,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <div className="pointer-events-auto bg-wiki-surface dark:bg-wiki-surface-dark border border-wiki-border dark:border-wiki-border-dark shadow-md max-w-[230px] min-w-[130px] text-[12px]">
+              {/* Header: step number + task name */}
+              <div className="px-2.5 py-1.5 border-b border-wiki-border dark:border-wiki-border-dark bg-[#0052cc] dark:bg-[#1a4a8a] flex items-start gap-1.5">
+                <span className="font-bold text-white flex-shrink-0 tabular-nums">
+                  {focused.listPos}.
+                </span>
+                <span className="font-semibold text-white leading-snug break-words min-w-0 flex-1">
+                  {focused.label}
+                </span>
+                {focused.isCompleted && (
+                  <span className="flex-shrink-0 text-white/75 text-[10px] leading-none mt-[2px]">
+                    ✓
+                  </span>
+                )}
+              </div>
+
+              {/* Body: description, requirements, notes */}
+              {hasBody && (
+                <div className="px-2.5 py-1.5 space-y-1.5">
+                  {focused.description && (
+                    <div className="text-wiki-text dark:text-wiki-text-dark leading-relaxed break-words">
+                      {focused.descriptionParts && focused.descriptionParts.length > 0 ? (
+                        <RichText parts={focused.descriptionParts} />
+                      ) : (
+                        focused.description
+                      )}
+                    </div>
+                  )}
+
+                  {focused.requirements && !focused.isCustom && (
+                    <div className="flex items-start gap-1.5">
+                      <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider text-wiki-text/65 dark:text-wiki-text-dark/65 mt-[1px]">
+                        Reqs:
+                      </span>
+                      <div className="text-wiki-text/80 dark:text-wiki-text-dark/75 leading-snug min-w-0">
+                        <RequirementsCell
+                          requirementsText={focused.requirements}
+                          requirementsParts={focused.requirementsParts}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {focused.notes && (
+                    <p className="italic text-wiki-text/70 dark:text-wiki-text-dark/65 leading-snug break-words">
+                      <span className="font-bold not-italic text-[10px] uppercase tracking-wider mr-1">
+                        Note:
+                      </span>
+                      {focused.notes}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Downward caret connecting card to pin */}
+            <svg
+              className="absolute left-1/2 -translate-x-1/2 text-wiki-border dark:text-wiki-border-dark"
+              style={{ top: '100%' }}
+              width="10"
+              height="5"
+              viewBox="0 0 10 5"
+              aria-hidden="true"
+              role="presentation"
+            >
+              <path d="M0 0 L5 5 L10 0 Z" fill="currentColor" />
+            </svg>
+          </div>
+        );
+      })()}
 
       {/* ── Empty state: no markers at all ─────────────────────────────────── */}
       {!hasAnyMarkers && (

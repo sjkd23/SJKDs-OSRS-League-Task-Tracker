@@ -163,6 +163,14 @@ export interface RouteMapPanelProps {
    * calls map.invalidateSize() so Leaflet re-measures its container.
    */
   containerHeight?: number;
+  /** Whether the planner is in Run Mode (swaps Prev/Next to Undo/Complete). */
+  isRunMode?: boolean;
+  /** Called when the user clicks Complete in Run Mode. */
+  onRunComplete?: () => void;
+  /** Called when the user clicks Undo in Run Mode. */
+  onRunUndo?: () => void;
+  /** True when there is at least one run-completed item (enables the Undo button). */
+  canRunUndo?: boolean;
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
@@ -174,6 +182,10 @@ export function RouteMapPanel({
   onMapClick,
   isPlacementMode = false,
   containerHeight,
+  isRunMode = false,
+  onRunComplete,
+  onRunUndo,
+  canRunUndo = false,
 }: RouteMapPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -582,38 +594,79 @@ export function RouteMapPanel({
       </div>
 
       {/* ── Overlay: prev / next navigation (bottom-centre) ────────────────── */}
-      {hasAnyMarkers && (
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[1000] flex flex-row gap-2 pointer-events-auto">
-          <button
-            onClick={() => prevId && onMarkerClick(prevId)}
-            disabled={!prevId}
-            title="Previous step"
-            className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
-              bg-wiki-surface dark:bg-wiki-surface-dark
-              text-wiki-text dark:text-wiki-text-dark
-              border-wiki-border dark:border-wiki-border-dark
-              hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
-              disabled:opacity-40 disabled:cursor-not-allowed
-              disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
-          >
-            &#8592; Prev
-          </button>
-          <button
-            onClick={() => nextId && onMarkerClick(nextId)}
-            disabled={!nextId}
-            title="Next step"
-            className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
-              bg-wiki-surface dark:bg-wiki-surface-dark
-              text-wiki-text dark:text-wiki-text-dark
-              border-wiki-border dark:border-wiki-border-dark
-              hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
-              disabled:opacity-40 disabled:cursor-not-allowed
-              disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
-          >
-            Next &#8594;
-          </button>
-        </div>
-      )}
+      {(hasAnyMarkers || isRunMode) && (() => {
+        if (isRunMode) {
+          // Run Mode: Complete is enabled whenever any item is focused,
+          // regardless of whether it has a map pin.
+          const canComplete = Boolean(focusedItemId);
+
+          return (
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[1000] flex flex-row gap-2 pointer-events-auto">
+              <button
+                onClick={onRunUndo}
+                disabled={!canRunUndo}
+                title="Undo — un-complete the last completed step"
+                className="px-4 py-2 text-[12px] font-semibold border shadow-sm transition-colors
+                  bg-wiki-surface dark:bg-wiki-surface-dark
+                  text-wiki-text dark:text-wiki-text-dark
+                  border-wiki-border dark:border-wiki-border-dark
+                  hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
+              >
+                &#8635; Undo
+              </button>
+              <button
+                onClick={onRunComplete}
+                disabled={!canComplete}
+                title="Complete — mark this step done and advance to next"
+                className="px-4 py-2 text-[12px] font-semibold border shadow-sm transition-colors
+                  bg-green-600 dark:bg-green-700
+                  text-white
+                  border-green-700 dark:border-green-600
+                  hover:bg-green-700 dark:hover:bg-green-600
+                  disabled:opacity-40 disabled:cursor-not-allowed
+                  disabled:hover:bg-green-600 dark:disabled:hover:bg-green-700"
+              >
+                &#10003; Complete
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[1000] flex flex-row gap-2 pointer-events-auto">
+            <button
+              onClick={() => prevId && onMarkerClick(prevId)}
+              disabled={!prevId}
+              title="Previous step"
+              className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
+                bg-wiki-surface dark:bg-wiki-surface-dark
+                text-wiki-text dark:text-wiki-text-dark
+                border-wiki-border dark:border-wiki-border-dark
+                hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
+                disabled:opacity-40 disabled:cursor-not-allowed
+                disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
+            >
+              &#8592; Prev
+            </button>
+            <button
+              onClick={() => nextId && onMarkerClick(nextId)}
+              disabled={!nextId}
+              title="Next step"
+              className="px-3 py-1.5 text-[11px] font-semibold border shadow-sm transition-colors
+                bg-wiki-surface dark:bg-wiki-surface-dark
+                text-wiki-text dark:text-wiki-text-dark
+                border-wiki-border dark:border-wiki-border-dark
+                hover:bg-wiki-mid dark:hover:bg-wiki-mid-dark
+                disabled:opacity-40 disabled:cursor-not-allowed
+                disabled:hover:bg-wiki-surface dark:disabled:hover:bg-wiki-surface-dark"
+            >
+              Next &#8594;
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── Selected marker detail card ──────────────────────────────────────── */}
       {selectedMarkerPt && (() => {

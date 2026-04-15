@@ -536,6 +536,29 @@ export function useRouteStore() {
     [],
   );
 
+  /**
+   * Toggle the Run Mode completion flag for a single route item.
+   * This is Route Planner-specific and does not affect the main task tracker.
+   */
+  const toggleItemRunComplete = useCallback((routeItemId: string) => {
+    setRoute((prev) => {
+      let changed = false;
+      const sections = prev.sections.map((s) => {
+        let sectionChanged = false;
+        const items = s.items.map((i) => {
+          if (i.routeItemId !== routeItemId) return i;
+          sectionChanged = changed = true;
+          return { ...i, runCompleted: !i.runCompleted };
+        });
+        return sectionChanged ? { ...s, items } : s;
+      });
+      if (!changed) return prev;
+      const next: Route = { ...prev, sections };
+      saveToStorage(ROUTE_STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+
   /** Set or clear a manual map location for a single route item entry. */
   const setRouteItemLocation = useCallback((routeItemId: string, location: RouteLocation | null) => {
     setRoute((prev) => {
@@ -603,5 +626,6 @@ export function useRouteStore() {
     renameSection,
     removeSection,
     setRouteItemLocation,
+    toggleItemRunComplete,
   };
 }

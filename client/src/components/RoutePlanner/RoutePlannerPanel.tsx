@@ -239,6 +239,7 @@ interface RoutePlannerPanelProps {
   onRemoveSection: (sectionId: string) => void;
   onSetRouteItemLocation: (routeItemId: string, location: RouteLocation | null) => void;
   onMoveItem: (routeItemId: string, destSectionId: string, destIndex: number) => void;
+  onToggleItemRunComplete: (routeItemId: string) => void;
 }
 
 interface CrossSectionPreview {
@@ -2192,6 +2193,7 @@ export function RoutePlannerPanel({
   onRemoveSection,
   onSetRouteItemLocation,
   onMoveItem,
+  onToggleItemRunComplete,
   structIdMappings,
 }: RoutePlannerPanelProps) {
   const layoutMode = useLayoutMode();
@@ -2335,7 +2337,9 @@ export function RoutePlannerPanel({
         const label = item.isCustom
           ? (item.customName ?? 'Custom')
           : (task?.name ?? 'Task');
-        const isCompleted = !item.isCustom && (task?.completed ?? false);
+        const isCompleted = isRunMode
+          ? (item.runCompleted ?? false)
+          : (!item.isCustom && (task?.completed ?? false));
         
         result.push({
           routeItemId: item.routeItemId,
@@ -2354,7 +2358,7 @@ export function RoutePlannerPanel({
       }
     }
     return result;
-  }, [route.sections, itemIndexMap, taskMap]);
+  }, [route.sections, itemIndexMap, taskMap, isRunMode]);
 
   const routeItemLookup = useMemo(() => {
     const map = new Map<string, RouteItem>();
@@ -2453,6 +2457,48 @@ export function RoutePlannerPanel({
       setMapPlacementItemId(null);
     }
   }, [mapPlacementItemId, onSetRouteItemLocation]);
+
+  // ── Run Mode: Complete / Undo ──────────────────────────────────────────────
+
+  /** True when at least one route item has been marked run-complete. */
+  const canRunUndo = useMemo(
+    () => route.sections.some((s) => s.items.some((i) => i.runCompleted)),
+    [route.sections],
+  );
+
+  /**
+   * Complete: mark the currently focused item as run-completed if it isn't
+   * already, then always advance to the next item in route order (regardless
+   * of whether items have map pins).
+   */
+  const handleRunComplete = useCallback(() => {
+    if (!mapFocusedItemId) return;
+    // Only mark complete if not already done — never un-complete on Complete click.
+    const focusedItem = route.sections.flatMap((s) => s.items).find((i) => i.routeItemId === mapFocusedItemId);
+    if (focusedItem && !focusedItem.runCompleted) {
+      onToggleItemRunComplete(mapFocusedItemId);
+    }
+    // Advance through ALL route items in order, not just pinned markers.
+    const idx = orderedItemIds.indexOf(mapFocusedItemId);
+    if (idx >= 0 && idx < orderedItemIds.length - 1) {
+      setMapFocusedItemId(orderedItemIds[idx + 1]);
+    }
+  }, [mapFocusedItemId, orderedItemIds, route.sections, onToggleItemRunComplete]);
+
+  /**
+   * Undo: find the last run-completed item (in flat route order), un-mark it,
+   * and focus it on the map if it has a pin.
+   */
+  const handleRunUndo = useCallback(() => {
+    const allItems = route.sections.flatMap((s) => s.items);
+    const lastCompleted = [...allItems].reverse().find((i) => i.runCompleted);
+    if (!lastCompleted) return;
+    onToggleItemRunComplete(lastCompleted.routeItemId);
+    const hasMarker = mapMarkers.some((m) => m.routeItemId === lastCompleted.routeItemId);
+    if (hasMarker) {
+      setMapFocusedItemId(lastCompleted.routeItemId);
+    }
+  }, [route.sections, mapMarkers, onToggleItemRunComplete]);
 
   // ── Export state ───────────────────────────────────────────────────────────
   const [exportStatus, setExportStatus] = useState<'idle' | 'copied'>('idle');
@@ -3504,6 +3550,10 @@ export function RoutePlannerPanel({
                 onMapClick={placementItem ? handleMapPlacement : undefined}
                 isPlacementMode={Boolean(placementItem)}
                 containerHeight={mapHeight}
+                isRunMode={isRunMode}
+                onRunComplete={handleRunComplete}
+                onRunUndo={handleRunUndo}
+                canRunUndo={canRunUndo}
               />
             </div>
 
@@ -3537,6 +3587,7 @@ export function RoutePlannerPanel({
                 onMoveItem={onMoveItem}
                 onStartPlacement={handleStartPlaceLocationNoScroll}
                 getMapRect={() => mapContainerRef.current?.getBoundingClientRect() ?? null}
+                onToggleRunComplete={onToggleItemRunComplete}
               />
             </div>
           </div>

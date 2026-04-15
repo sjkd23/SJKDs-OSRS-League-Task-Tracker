@@ -74,6 +74,11 @@ export interface MapRouteListProps {
    * Used to detect drag-to-map drops. Pass `() => mapRef.current?.getBoundingClientRect() ?? null`.
    */
   getMapRect?: () => DOMRect | null;
+  /**
+   * Called when the user clicks an item's checkbox in Run Mode.
+   * Toggles the run-completion state for that route item.
+   */
+  onToggleRunComplete?: (routeItemId: string) => void;
 }
 
 // --- Small inline SVG pin ----------------------------------------------------
@@ -137,6 +142,8 @@ interface SortableMapRowProps {
   onHover: (id: string | null) => void;
   /** Click the pin icon on the left to activate placement for this item. */
   onPlaceOnMap: () => void;
+  /** In Run Mode: toggles run-completion for this item. */
+  onToggleRunComplete?: () => void;
   /** Task detail fields shown inline when this row is focused/selected. */
   detailDesc?: string | null;
   detailDescParts?: TaskView['descriptionParts'];
@@ -159,6 +166,7 @@ function SortableMapRow({
   onSelect,
   onHover,
   onPlaceOnMap,
+  onToggleRunComplete,
   detailDesc,
   detailDescParts,
   detailReqs,
@@ -263,10 +271,34 @@ function SortableMapRow({
         </span>
       </button>
 
-      {/* Reorder grip - RIGHT side.
-          Drag within list to reorder.
-          Drag outside list and release over the map canvas to activate placement. */}
-      {!isRunMode && (
+      {/* Reorder grip / Run Mode checkbox - RIGHT side.
+          In normal mode: drag within list to reorder, or drag onto map to place pin.
+          In Run Mode: checkbox toggles run-completion for this item. */}
+      {isRunMode ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleRunComplete?.(); }}
+          title={isCompleted ? 'Mark incomplete' : 'Mark complete'}
+          aria-label={isCompleted ? `Mark "${label}" incomplete` : `Mark "${label}" complete`}
+          className={[
+            'flex-shrink-0 flex items-center justify-center w-8 self-stretch px-2 py-2 transition-colors cursor-pointer',
+            isCompleted
+              ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300'
+              : 'text-wiki-muted/50 dark:text-wiki-muted-dark/50 hover:text-wiki-muted dark:hover:text-wiki-muted-dark',
+          ].join(' ')}
+        >
+          {/* Visual checkbox: filled circle with checkmark when done, empty circle when not */}
+          <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+            {isCompleted ? (
+              <>
+                <circle cx="8" cy="8" r="7" />
+                <path d="M4.5 8.5l2.5 2.5 4.5-4.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </>
+            ) : (
+              <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.5" />
+            )}
+          </svg>
+        </button>
+      ) : (
         <span
           {...attributes}
           {...sortListeners}
@@ -333,6 +365,7 @@ export function MapRouteList({
   onMoveItem,
   onStartPlacement,
   getMapRect,
+  onToggleRunComplete,
 }: MapRouteListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
@@ -519,7 +552,9 @@ export function MapRouteList({
                     const isFocused = item.routeItemId === focusedItemId;
                     const isHovered = item.routeItemId === hoveredItemId;
                     const task = !item.isCustom ? taskMap.get(item.taskId) : undefined;
-                    const isCompleted = task?.completed ?? false;
+                    const isCompleted = isRunMode
+                      ? (item.runCompleted ?? false)
+                      : (task?.completed ?? false);
                     const label = item.isCustom
                       ? (item.customName ?? 'Custom task')
                       : task?.name ?? item._snap?.name ?? (() => {
@@ -560,6 +595,7 @@ export function MapRouteList({
                           id === null && prev !== item.routeItemId ? prev : id,
                         )}
                         onPlaceOnMap={() => onStartPlacement(item.routeItemId)}
+                        onToggleRunComplete={onToggleRunComplete ? () => onToggleRunComplete(item.routeItemId) : undefined}
                         detailDesc={detailDesc}
                         detailDescParts={detailDescParts}
                         detailReqs={detailReqs}

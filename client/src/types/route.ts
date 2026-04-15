@@ -94,6 +94,15 @@ export interface RouteItem {
    * Preserved across import/export and share encode/decode (v3+).
    */
   customIcon?: string;
+
+  // ─── Run Mode completion ────────────────────────────────────────────────
+  /**
+   * Route-planner-specific completion flag set during Run Mode.
+   * Distinct from the main task tracker's completion state — only affects
+   * the Route Planner UI (checkbox state, pin colour, Undo/Complete buttons).
+   * Persisted in the route store so it survives page refresh.
+   */
+  runCompleted?: boolean;
 }
 
 /**

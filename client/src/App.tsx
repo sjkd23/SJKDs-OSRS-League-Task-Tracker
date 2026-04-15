@@ -42,6 +42,7 @@ export default function App() {
     reorderSections, resetRoute,
     updateRouteName, replaceRoute, remapRouteTaskIds, addCustomTask, editCustomTask,
     addSection, renameSection, removeSection, setRouteItemLocation,
+    toggleItemRunComplete,
   } = useRouteStore();
   // Captured once at mount so the share-param hydration effect can check whether
   // the user already has meaningful route content without a stale-closure risk.
@@ -713,6 +714,7 @@ export default function App() {
               onRemoveSection={removeSection}
               onSetRouteItemLocation={setRouteItemLocation}
               onMoveItem={moveItem}
+              onToggleItemRunComplete={toggleItemRunComplete}
             />
           </div>
         )}

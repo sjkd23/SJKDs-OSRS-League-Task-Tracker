@@ -183,9 +183,11 @@ function resolveTier(raw: ScraperTask): Tier {
  */
 function resolveSkillStrings(skills?: { skill: string; level: number }[]): string[] {
   if (!skills || skills.length === 0) return [];
-  return skills.map(
-    (s) => `${s.skill.charAt(0).toUpperCase() + s.skill.slice(1).toLowerCase()} ${s.level}`,
-  );
+  return skills
+    .filter((s) => s.skill != null && s.level != null)
+    .map(
+      (s) => `${s.skill.charAt(0).toUpperCase() + s.skill.slice(1).toLowerCase()} ${s.level}`,
+    );
 }
 
 function deriveRequirementsText(raw: ScraperTask, skillStrings: string[]): string {

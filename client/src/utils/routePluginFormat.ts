@@ -127,6 +127,7 @@ type ParseFailure = { ok: false; error: string };
 export function parsePluginRoute(
   jsonText: string,
   allTasks: TaskView[],
+  mapping?: Map<number, number>,
 ): ParseSuccess | ParseFailure {
   let raw: unknown;
   try {
@@ -184,7 +185,17 @@ export function parsePluginRoute(
             : NaN;
 
       if (!isNaN(numericId)) {
-        const appId = structIdToAppId.get(numericId);
+        // Priority 1: direct structId match in current dataset
+        let appId = structIdToAppId.get(numericId);
+
+        // Priority 2: preliminary → real structId mapping (e.g. League 6 transitional IDs)
+        if (!appId && mapping && mapping.size > 0) {
+          const realStructId = mapping.get(numericId);
+          if (realStructId !== undefined) {
+            appId = structIdToAppId.get(realStructId);
+          }
+        }
+
         if (appId) {
           const baseItem: RouteItem = {
             taskId: appId,

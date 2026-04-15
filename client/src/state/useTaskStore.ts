@@ -97,10 +97,59 @@ const DEFAULT_SORT: SortConfig = {
  */
 const DEV_DATA_URL = `/data/${CURRENT_LEAGUE.dataFile}`;
 
+/** URL for the preliminary→real structId mappings file, or null when not configured. */
+const MAPPINGS_URL = CURRENT_LEAGUE.mappingsFile
+  ? `/data/${CURRENT_LEAGUE.mappingsFile}`
+  : null;
+
+/**
+ * Build a Map<preliminaryStructId, realStructId> from the raw mappings JSON.
+ *
+ * Accepts an array of { league_6_preliminary_id, league_6_real_structId } objects.
+ * Values that are not numbers are silently skipped so malformed entries are
+ * non-fatal.
+ */
+function buildMappingFromRaw(raw: unknown): Map<number, number> {
+  const map = new Map<number, number>();
+  if (!Array.isArray(raw)) return map;
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || !entry) continue;
+    const e = entry as Record<string, unknown>;
+    const prelim = e.league_6_preliminary_id ?? e.preliminaryId ?? e.from;
+    const real   = e.league_6_real_structId  ?? e.realStructId  ?? e.to;
+    if (typeof prelim === 'number' && typeof real === 'number') {
+      map.set(prelim, real);
+    }
+  }
+  return map;
+}
+
+/**
+ * Apply an in-memory structId upgrade to raw scraper tasks.
+ *
+ * Replaces preliminary struct IDs with their real counterparts where mappings
+ * exist. This is a no-op when either the mapping is empty or the task already
+ * has a real ID. Safe to call even when the upgrade script has already been run.
+ */
+function applyStructIdUpgrade(raw: ScraperTask[], mapping: Map<number, number>): ScraperTask[] {
+  if (mapping.size === 0) return raw;
+  return raw.map((task) => {
+    const realId = mapping.get(task.structId);
+    if (realId === undefined || realId === task.structId) return task;
+    return { ...task, structId: realId };
+  });
+}
+
 export function useTaskStore() {
   // Task content is loaded asynchronously from the scraped JSON
   const [tasks, setTasks] = useState<AppTask[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Preliminary→real structId mapping (empty when league is not transitional).
+  // Exported so callers (App.tsx) can pass it to route/import reconciliation.
+  const [structIdMappings, setStructIdMappings] = useState<Map<number, number>>(
+    () => new Map(),
+  );
 
   // User state is mutable and persisted
   const [userState, setUserState] = useState<Map<string, TaskUserState>>(
@@ -113,14 +162,27 @@ export function useTaskStore() {
 
   // Load task data on mount and rehydrate persisted user state
   useEffect(() => {
-    fetch(DEV_DATA_URL)
+    const taskFetch = fetch(DEV_DATA_URL)
       .then((r) => {
         if (!r.ok) throw new Error(`Failed to load task data: ${r.status}`);
         return r.json() as Promise<ScraperTask[]>;
-      })
-      .then((raw) => {
-        const loaded = mapScraperTasks(raw);
+      });
+
+    const mappingFetch: Promise<Map<number, number>> = MAPPINGS_URL
+      ? fetch(MAPPINGS_URL)
+          .then((r) => (r.ok ? r.json() : []))
+          .then(buildMappingFromRaw)
+          .catch(() => new Map<number, number>())
+      : Promise.resolve(new Map<number, number>());
+
+    Promise.all([taskFetch, mappingFetch])
+      .then(([raw, mapping]) => {
+        // Apply in-memory struct ID upgrade so the app always works with real IDs
+        // even if the upgrade script has not been run yet.
+        const upgraded = applyStructIdUpgrade(raw, mapping);
+        const loaded = mapScraperTasks(upgraded);
         setTasks(loaded);
+        setStructIdMappings(mapping);
         // Rehydrate after tasks are known so IDs can be validated
         setUserState(hydrateUserState(loaded));
         setLoading(false);
@@ -337,6 +399,8 @@ export function useTaskStore() {
     loading,
     /** All tasks (content only, no user state) — use for deriving filter options */
     tasks,
+    /** Preliminary → real structId mapping loaded from the league mappings file. Empty map when not transitional. */
+    structIdMappings,
     /** All tasks with user state merged, unfiltered — use for route planner and similar needs */
     allTaskViews: taskViews,
     /** Tasks merged with user state, filtered and sorted for display */

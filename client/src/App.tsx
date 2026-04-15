@@ -30,6 +30,7 @@ export default function App() {
     visiblePointsTotal, visiblePointsExcludingCompleted, totalAcquiredPoints, totalCompletedCount,
     filters, sort, setFilters, setSort,
     toggleCompleted, toggleTodo, replaceFromPlugin, isNoOpImport, canRevert, revertImport,
+    structIdMappings,
   } = useTaskStore();
   const { theme, toggleTheme } = useTheme();
   const layoutMode = useLayoutMode();
@@ -39,12 +40,51 @@ export default function App() {
     route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute,
     moveItem,
     reorderSections, resetRoute,
-    updateRouteName, replaceRoute, addCustomTask, editCustomTask,
+    updateRouteName, replaceRoute, remapRouteTaskIds, addCustomTask, editCustomTask,
     addSection, renameSection, removeSection, setRouteItemLocation,
   } = useRouteStore();
   // Captured once at mount so the share-param hydration effect can check whether
   // the user already has meaningful route content without a stale-closure risk.
   const routeIsMeaningfulAtMount = useRef(isMeaningfulRoute(route));
+
+  // ── ID remap: apply once when tasks first load ─────────────────────────────
+  // When the dataset switches from preliminary to real struct IDs, route items
+  // stored with old taskIds (task-${oldStructId}-${sortId}) are remapped to the
+  // current dataset's IDs via sortId. Safe no-op if all IDs already resolve.
+  const routeRemapApplied = useRef(false);
+  useEffect(() => {
+    if (routeRemapApplied.current || tasks.length === 0) return;
+    routeRemapApplied.current = true;
+    remapRouteTaskIds(tasks, structIdMappings);
+  }, [tasks, structIdMappings, remapRouteTaskIds]);
+
+  // Memoized lookup map (taskId → task) for building _snap on route item creation.
+  const taskViewById = useMemo(
+    () => new Map(allTaskViews.map((t) => [t.id, t])),
+    [allTaskViews],
+  );
+
+  /**
+   * Adds a task to the route, recording an identity snapshot (_snap) so the
+   * item can survive a preliminary→real struct ID migration via taskKey/sortId.
+   */
+  const addTaskToRouteWithSnap = useCallback(
+    (taskId: string) => {
+      const task = taskViewById.get(taskId);
+      addTaskToRoute(
+        taskId,
+        task
+          ? {
+              name: task.name,
+              structId: task.structId,
+              sortId: task.sortId,
+              ...(task.taskKey ? { taskKey: task.taskKey } : {}),
+            }
+          : undefined,
+      );
+    },
+    [addTaskToRoute, taskViewById],
+  );
   // Current app mode. 'tracker' is the default on load — Route Planner is opt-in.
   // If a shared route param (?r=) is present in the URL, start directly in planner mode
   // so the planner panel is visible as soon as the shared route is consumed.
@@ -224,14 +264,14 @@ export default function App() {
     // flushSync forces React to commit the state update synchronously so we can
     // measure the new DOM position immediately, without relying on rAF timing.
     flushSync(() => {
-      addTaskToRoute(taskId);
+      addTaskToRouteWithSnap(taskId);
     });
     const after = anchor ? anchor.getBoundingClientRect().top : 0;
     const delta = after - before;
     if (delta !== 0) {
       window.scrollBy({ top: delta, behavior: 'instant' });
     }
-  }, [addTaskToRoute]);
+  }, [addTaskToRouteWithSnap]);
 
   // Route planner summary stats — used by the mobile sticky bar in planner mode
   const routeItemCount = useMemo(
@@ -580,7 +620,7 @@ export default function App() {
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
                 mode={appMode}
-                onAddToRoute={addTaskToRoute}
+                onAddToRoute={addTaskToRouteWithSnap}
               />
             ) : (
               <MemoizedTaskTable
@@ -590,7 +630,7 @@ export default function App() {
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
                 mode={appMode}
-                onAddToRoute={addTaskToRoute}
+                onAddToRoute={addTaskToRouteWithSnap}
               />
             )}
           </main>
@@ -660,6 +700,7 @@ export default function App() {
               isRunMode={isRunMode}
               setIsRunMode={setIsRunMode}
               allTasks={allTaskViews}
+              structIdMappings={structIdMappings}
               onUpdateRouteName={updateRouteName}
               onRemoveTask={removeTaskFromRoute}
               onReorderSections={reorderSections}

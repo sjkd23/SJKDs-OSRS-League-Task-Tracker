@@ -38,6 +38,13 @@ export interface LeagueConfig {
    * Set to false (or omit) once official IDs are confirmed.
    */
   transitional?: boolean;
+  /**
+   * Filename of the preliminary→real structId mappings file under client/public/data/.
+   * Only present when `transitional` is true. When set, the app loads this file
+   * at startup and uses it to remap stored preliminary struct IDs to official ones
+   * in route items, tracker state, and plugin imports.
+   */
+  mappingsFile?: string;
 }
 
 // ── Current league ────────────────────────────────────────────────────────────
@@ -62,6 +69,7 @@ export const CURRENT_LEAGUE: LeagueConfig = {
   dataFile:       'LEAGUE_6.full.json',
   pluginTaskType: 'LEAGUE_6',
   transitional:   true,
+  mappingsFile:   'LEAGUE_6-mappings.json',
 };
 
 /**

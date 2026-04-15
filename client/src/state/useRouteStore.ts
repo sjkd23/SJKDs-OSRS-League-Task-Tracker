@@ -168,8 +168,14 @@ export function useRouteStore() {
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
-  /** Add a task to the end of the last section. Deduplicates silently. */
-  const addTaskToRoute = useCallback((taskId: string) => {
+  /**
+   * Add a task to the end of the last section. Deduplicates silently.
+   *
+   * @param snap  Optional identity snapshot stored on the route item.
+   *              When provided, preserves name, structId, sortId, and taskKey
+   *              so the item can survive a preliminary→real struct ID migration.
+   */
+  const addTaskToRoute = useCallback((taskId: string, snap?: RouteItem['_snap']) => {
     setRoute((prev) => {
       const alreadyIn = prev.sections.some((s) => s.items.some((i) => i.taskId === taskId));
       if (alreadyIn) return prev;
@@ -178,7 +184,12 @@ export function useRouteStore() {
         sections.push({ id: crypto.randomUUID(), name: 'Main', description: '', items: [] });
       }
       const lastIdx = sections.length - 1;
-      const lastSection: RouteSection = { ...sections[lastIdx], items: [...sections[lastIdx].items, { taskId, routeItemId: crypto.randomUUID() }] };
+      const newItem: RouteItem = {
+        taskId,
+        routeItemId: crypto.randomUUID(),
+        ...(snap ? { _snap: snap } : {}),
+      };
+      const lastSection: RouteSection = { ...sections[lastIdx], items: [...sections[lastIdx].items, newItem] };
       const next: Route = { ...prev, sections: [...sections.slice(0, lastIdx), lastSection] };
       saveToStorage(ROUTE_STORAGE_KEY, next);
       return next;
@@ -457,6 +468,74 @@ export function useRouteStore() {
     setRoute(newRoute);
   }, []);
 
+  /**
+   * Remap route item taskIds for all non-custom items whose current taskId is
+   * not found in the provided task list but can be re-resolved via sortId.
+   *
+   * Used once at startup when the dataset migrates from preliminary to real
+   * struct IDs. sortId is stable within a league dataset, so a stale ID like
+   * "task-99999-5" can be safely remapped to "task-246282-5" when the task
+   * with sortId 5 is present with the new structId.
+   *
+   * Safe no-op when the route is empty or all task IDs already resolve.
+   * Custom items (isCustom: true) are never remapped.
+   */
+  const remapRouteTaskIds = useCallback(
+    (tasks: Array<{ id: string; sortId: number; structId: number }>, mapping: Map<number, number>) => {
+      if (tasks.length === 0) return;
+      const taskIdSet = new Set(tasks.map((t) => t.id));
+      const structIdToTaskId = new Map(tasks.map((t) => [t.structId, t.id]));
+      const sortIdToTaskId = new Map(tasks.filter((t) => t.sortId > 0).map((t) => [t.sortId, t.id]));
+      setRoute((prev) => {
+        let changed = false;
+        const sections = prev.sections.map((s) => {
+          let sectionChanged = false;
+          const items = s.items.map((i) => {
+            if (i.isCustom || taskIdSet.has(i.taskId)) return i;
+            const match = i.taskId.match(/^task-(\d+)-(\d+)$/);
+            if (!match) return i;
+            const storedStructId = parseInt(match[1], 10);
+            const storedSortId = parseInt(match[2], 10);
+
+            // Priority 1: mapping file (preliminary → real structId)
+            const realStructId = mapping.get(storedStructId);
+            if (realStructId !== undefined) {
+              const newId = structIdToTaskId.get(realStructId);
+              if (newId) {
+                sectionChanged = changed = true;
+                return { ...i, taskId: newId };
+              }
+            }
+
+            // Priority 2: stored structId is already the real ID
+            const directId = structIdToTaskId.get(storedStructId);
+            if (directId) {
+              sectionChanged = changed = true;
+              return { ...i, taskId: directId };
+            }
+
+            // Priority 3: sortId fallback only when not a placeholder (sortId > 0)
+            if (storedSortId > 0) {
+              const sortId = sortIdToTaskId.get(storedSortId);
+              if (sortId) {
+                sectionChanged = changed = true;
+                return { ...i, taskId: sortId };
+              }
+            }
+
+            return i; // preserve unresolved
+          });
+          return sectionChanged ? { ...s, items } : s;
+        });
+        if (!changed) return prev;
+        const next: Route = { ...prev, sections };
+        saveToStorage(ROUTE_STORAGE_KEY, next);
+        return next;
+      });
+    },
+    [],
+  );
+
   /** Set or clear a manual map location for a single route item entry. */
   const setRouteItemLocation = useCallback((routeItemId: string, location: RouteLocation | null) => {
     setRoute((prev) => {
@@ -517,6 +596,7 @@ export function useRouteStore() {
     resetRoute,
     updateRouteName,
     replaceRoute,
+    remapRouteTaskIds,
     addCustomTask,
     editCustomTask,
     addSection,

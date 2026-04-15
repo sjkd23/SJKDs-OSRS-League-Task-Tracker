@@ -225,6 +225,8 @@ interface RoutePlannerPanelProps {
   isRunMode: boolean;
   setIsRunMode: (mode: boolean) => void;
   allTasks: TaskView[];
+  /** Preliminary → real structId mapping for the current league. Used when parsing plugin-format routes. */
+  structIdMappings?: Map<number, number>;
   onUpdateRouteName: (name: string) => void;
   onRemoveTask: (taskId: string) => void;
   onReorderSections: (fromIndex: number, toIndex: number) => void;
@@ -2190,6 +2192,7 @@ export function RoutePlannerPanel({
   onRemoveSection,
   onSetRouteItemLocation,
   onMoveItem,
+  structIdMappings,
 }: RoutePlannerPanelProps) {
   const layoutMode = useLayoutMode();
 
@@ -2557,7 +2560,7 @@ export function RoutePlannerPanel({
       setImportError('Clipboard was empty or unavailable — copy a route export first.');
       return;
     }
-    const result = parsePluginRoute(clipboardText, allTasks);
+    const result = parsePluginRoute(clipboardText, allTasks, structIdMappings);
     if (!result.ok) {
       setImportError(result.error);
       return;
@@ -2587,7 +2590,7 @@ export function RoutePlannerPanel({
       setImportError('Paste a route export JSON first.');
       return;
     }
-    const result = parsePluginRoute(clipboardText, allTasks);
+    const result = parsePluginRoute(clipboardText, allTasks, structIdMappings);
     if (!result.ok) {
       setImportError(result.error);
       return;

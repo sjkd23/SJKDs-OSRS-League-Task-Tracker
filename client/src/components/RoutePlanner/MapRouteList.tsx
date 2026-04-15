@@ -56,8 +56,12 @@ export interface MapRouteListProps {
   orderedItemIds: string[];
   /** Called when the user clicks a list row body. */
   onSelectItem: (routeItemId: string) => void;
-  /** Called when the user reorders items from this list. */
-  onReorderItems: (fromIndex: number, toIndex: number) => void;
+  /**
+   * Called when the user reorders or moves an item from this list.
+   * Uses section-aware semantics: only the dragged item changes position;
+   * all other items stay in their current sections.
+   */
+  onMoveItem: (routeItemId: string, destSectionId: string, destIndex: number) => void;
   /**
    * Called when the user activates map placement for an item.
    * Triggered by:
@@ -326,7 +330,7 @@ export function MapRouteList({
   isRunMode,
   orderedItemIds,
   onSelectItem,
-  onReorderItems,
+  onMoveItem,
   onStartPlacement,
   getMapRect,
 }: MapRouteListProps) {
@@ -389,13 +393,30 @@ export function MapRouteList({
         }
       }
 
-      // Normal reorder
+      // Section-aware reorder:
+      // Locate which section owns the over-item and its index within that section.
+      // Only the dragged item changes position — no other item ever crosses a
+      // section boundary as a side-effect of the redistribution.
       if (!over || over.id === active.id) return;
-      const oldIndex = allItems.findIndex((i) => i.routeItemId === active.id);
-      const newIndex = allItems.findIndex((i) => i.routeItemId === over.id);
-      if (oldIndex !== -1 && newIndex !== -1) onReorderItems(oldIndex, newIndex);
+
+      const activeId = active.id as string;
+      const overId = over.id as string;
+
+      let destSectionId: string | null = null;
+      let destIndex = -1;
+      for (const s of sections) {
+        const idx = s.items.findIndex((i) => i.routeItemId === overId);
+        if (idx !== -1) {
+          destSectionId = s.id;
+          destIndex = idx;
+          break;
+        }
+      }
+      if (!destSectionId || destIndex === -1) return;
+
+      onMoveItem(activeId, destSectionId, destIndex);
     },
-    [getMapRect, onStartPlacement, allItems, onReorderItems],
+    [getMapRect, onStartPlacement, sections, onMoveItem],
   );
 
   // Build cumulative league points for each visible route item (in section/item display order)

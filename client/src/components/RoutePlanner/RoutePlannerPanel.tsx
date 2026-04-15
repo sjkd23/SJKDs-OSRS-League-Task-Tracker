@@ -227,7 +227,6 @@ interface RoutePlannerPanelProps {
   allTasks: TaskView[];
   onUpdateRouteName: (name: string) => void;
   onRemoveTask: (taskId: string) => void;
-  onReorderItems: (fromIndex: number, toIndex: number) => void;
   onReorderSections: (fromIndex: number, toIndex: number) => void;
   onResetRoute: () => void;
   onReplaceRoute: (newRoute: Route) => void;
@@ -2181,7 +2180,6 @@ export function RoutePlannerPanel({
   allTasks,
   onUpdateRouteName,
   onRemoveTask,
-  onReorderItems,
   onReorderSections,
   onResetRoute,
   onReplaceRoute,
@@ -3533,7 +3531,7 @@ export function RoutePlannerPanel({
                 onSelectItem={handleSelectMapItem}
                 isRunMode={isRunMode}
                 orderedItemIds={orderedItemIds}
-                onReorderItems={onReorderItems}
+                onMoveItem={onMoveItem}
                 onStartPlacement={handleStartPlaceLocationNoScroll}
                 getMapRect={() => mapContainerRef.current?.getBoundingClientRect() ?? null}
               />

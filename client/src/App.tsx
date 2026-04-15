@@ -36,7 +36,7 @@ export default function App() {
 
   // ── Route Planner state (isolated from task tracker state) ────────────────
   const {
-    route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute, reorderItems,
+    route, isRunMode, setIsRunMode, taskIdsInRoute, addTaskToRoute, removeTaskFromRoute,
     moveItem,
     reorderSections, resetRoute,
     updateRouteName, replaceRoute, addCustomTask, editCustomTask,
@@ -662,7 +662,6 @@ export default function App() {
               allTasks={allTaskViews}
               onUpdateRouteName={updateRouteName}
               onRemoveTask={removeTaskFromRoute}
-              onReorderItems={reorderItems}
               onReorderSections={reorderSections}
               onResetRoute={resetRoute}
               onReplaceRoute={replaceRoute}

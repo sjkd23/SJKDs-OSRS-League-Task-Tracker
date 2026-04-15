@@ -549,7 +549,7 @@ export function RouteMapPanel({
 
   return (
     <div
-      className="relative h-full"
+      className="relative h-full overflow-hidden"
       aria-label="Route map"
     >
       {/* Leaflet map mounts here — explicit pixel height so Leaflet reads correct size */}

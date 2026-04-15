@@ -119,7 +119,8 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     id: `task-${raw.structId}-${raw.sortId}`,
     structId: raw.structId,
     sortId: raw.sortId,
-    area: raw.area,
+    // null area can appear on unmatched merge entries — normalise to 'Unknown'
+    area: raw.area ?? 'Unknown',
     name: cleanWikiGarbage(raw.name),
     description: cleanWikiGarbage(raw.description),
     // category can be null in transitional League 6 data — normalise to 'Other'
@@ -149,6 +150,10 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
  * Convert an entire array of raw scraper tasks — the primary entry point
  * when loading real league data.
  *
+ * Entries with a null/undefined structId are silently skipped: they are
+ * unmatched placeholders from the merge pipeline that have no valid struct
+ * identity and cannot be displayed or tracked.
+ *
  * Usage:
  * ```ts
  * const raw: ScraperTask[] = await fetch('/data/league6.full.json').then(r => r.json());
@@ -156,7 +161,9 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
  * ```
  */
 export function mapScraperTasks(rawTasks: ScraperTask[]): AppTask[] {
-  return rawTasks.map(mapScraperTask);
+  return rawTasks
+    .filter((raw): raw is ScraperTask => raw.structId != null)
+    .map(mapScraperTask);
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

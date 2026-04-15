@@ -89,18 +89,18 @@ export const REGION_ICON: Record<string, string> = {
  * anywhere else in the application.
  */
 export const LEAGUE_CONFIG = {
-  slug: 'Raging_Echoes_League',
-  displayName: 'Raging Echoes League',
+  slug: 'Demonic_Pacts_League',
+  displayName: 'Demonic Pacts League',
 } as const;
 
 /**
  * Returns the OSRS Wiki area page URL for the given region using the current
- * league slug. Returns `undefined` for "Global" — it has no dedicated area page.
+ * league slug. Returns `undefined` for "Global" or unknown areas (null/empty).
  *
  * MediaWiki convention: spaces → underscores, & → %26.
  */
-export function regionWikiUrl(area: string): string | undefined {
-  if (area === 'Global') return undefined;
+export function regionWikiUrl(area: string | null | undefined): string | undefined {
+  if (!area || area === 'Global' || area === 'Unknown') return undefined;
   const slug = area.replace(/ /g, '_').replace(/&/g, '%26');
   return `https://oldschool.runescape.wiki/w/${LEAGUE_CONFIG.slug}/Areas/${slug}`;
 }

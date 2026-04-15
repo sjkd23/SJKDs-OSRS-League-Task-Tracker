@@ -18,7 +18,13 @@ export interface ScraperTask {
   sortId: number;
   name: string;
   description: string;
-  area: string;
+  /**
+   * Area/region the task belongs to, e.g. "Global", "Morytania", "Varlamore".
+   * May be null on unmatched placeholder entries produced by the merge pipeline
+   * (`_enrichmentStatus: "unmatched"`). mapScraperTasks filters these out before
+   * they reach the app, so UI code can always assume a non-null string.
+   */
+  area: string | null;
   /**
    * Broad task category, e.g. "Combat", "Skill", "Quest".
    * May be null when not set in the game cache (common in transitional League 6 data).

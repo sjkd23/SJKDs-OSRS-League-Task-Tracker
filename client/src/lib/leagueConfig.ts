@@ -49,16 +49,15 @@ export interface LeagueConfig {
 
 // ── Current league ────────────────────────────────────────────────────────────
 //
-// LEAGUE 6 TRANSITIONAL MODE
-// This dataset uses temporary/community struct IDs scraped from the wiki before
-// the official game cache data is available. These IDs are stable for now and
-// are used by other community sites too — do NOT remap them.
+// LEAGUE 6 — FINAL DATASET
+// LEAGUE_6.full.json is the merged final dataset produced after the real struct
+// IDs were confirmed from the game cache.  The merged file contains 1592 tasks
+// (area-specific + global), all with official struct IDs in the 6807–15403
+// range.  Preliminary/community IDs are no longer used.
 //
-// Release-day migration: when official IDs are confirmed:
-//   1. Replace LEAGUE_6.full.json with the official scraper output.
-//   2. Set transitional: false (or remove the flag).
-//   3. Use the taskKey field on each task to map old route items → new IDs.
-//   4. Update pluginTaskType if the plugin uses a different string.
+// Stored user state from the transitional 689-task dataset is automatically
+// remapped at startup via struct-ID lookup (same structIds, new sortIds).
+// No manual storage clearing is required.
 //
 // To switch leagues: update id, name, slug, dataFile, and pluginTaskType together.
 
@@ -68,8 +67,6 @@ export const CURRENT_LEAGUE: LeagueConfig = {
   slug:           'demonic-pacts',
   dataFile:       'LEAGUE_6.full.json',
   pluginTaskType: 'LEAGUE_6',
-  transitional:   true,
-  mappingsFile:   'LEAGUE_6-mappings.json',
 };
 
 /**

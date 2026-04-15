@@ -31,20 +31,74 @@ const STORAGE_KEYS = {
  * Load persisted user-state IDs from localStorage and return a Map keyed by
  * task id. Only ids that exist in the current task list are retained, so stale
  * data from removed tasks doesn't accumulate indefinitely.
+ *
+ * Migration: when the dataset changes (e.g. League 6 final IDs replacing the
+ * transitional set), stored task IDs may no longer directly match the current
+ * task list. If a stored ID is of the form `task-{structId}-{sortId}` and the
+ * structId resolves to a task in the current dataset (even with a different
+ * sortId), the stored entry is remapped to the current task ID transparently.
+ * The remapped IDs are written back to storage so subsequent loads are instant.
  */
 function hydrateUserState(tasks: AppTask[]): Map<string, TaskUserState> {
-  const taskIds = new Set(tasks.map((t) => t.id));
-  const completed = new Set<string>(loadFromStorage<string[]>(STORAGE_KEYS.completed, []));
-  const todos = new Set<string>(loadFromStorage<string[]>(STORAGE_KEYS.todos, []));
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  // structId → current task ID (for remapping when sortId changed between dataset versions)
+  const taskIdByStructId = new Map(tasks.map((t) => [t.structId, t.id]));
+
+  const rawCompleted = loadFromStorage<string[]>(STORAGE_KEYS.completed, []);
+  const rawTodos    = loadFromStorage<string[]>(STORAGE_KEYS.todos,     []);
+
+  /**
+   * Remap a single stored task ID to its current counterpart.
+   * 1. If the ID directly matches the current task list, keep it as-is.
+   * 2. If the ID matches `task-{structId}-{oldSortId}` and the structId
+   *    exists in the new dataset (possibly with a different sortId), remap it.
+   * 3. Otherwise drop it (task was removed from the dataset).
+   */
+  function remapId(storedId: string): string | null {
+    if (taskById.has(storedId)) return storedId;
+    const m = storedId.match(/^task-(\d+)-\d+$/);
+    if (!m) return null;
+    return taskIdByStructId.get(parseInt(m[1], 10)) ?? null;
+  }
+
+  let anythingRemapped = false;
+  const completedIds: string[] = [];
+  const todoIds: string[] = [];
+
+  for (const raw of rawCompleted) {
+    const current = remapId(raw);
+    if (current) {
+      completedIds.push(current);
+      if (current !== raw) anythingRemapped = true;
+    } else {
+      anythingRemapped = true; // dropped entry
+    }
+  }
+  for (const raw of rawTodos) {
+    const current = remapId(raw);
+    if (current) {
+      todoIds.push(current);
+      if (current !== raw) anythingRemapped = true;
+    } else {
+      anythingRemapped = true; // dropped entry
+    }
+  }
+
+  // Persist remapped IDs so subsequent loads don't need to remap again.
+  if (anythingRemapped) {
+    saveToStorage(STORAGE_KEYS.completed, completedIds);
+    saveToStorage(STORAGE_KEYS.todos,    todoIds);
+  }
+
+  const completed = new Set(completedIds);
+  const todos     = new Set(todoIds);
 
   const map = new Map<string, TaskUserState>();
-  for (const id of taskIds) {
-    if (completed.has(id) || todos.has(id)) {
-      map.set(id, {
-        completed: completed.has(id),
-        isTodo: todos.has(id),
-      });
-    }
+  for (const id of new Set([...completed, ...todos])) {
+    map.set(id, {
+      completed: completed.has(id),
+      isTodo:    todos.has(id),
+    });
   }
   return map;
 }

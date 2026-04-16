@@ -17,7 +17,7 @@ interface MobileFilterSortBarProps {
   activeCount: number;
   routeTaskListVisibility?: RouteTaskListVisibilityFilters;
   onRouteTaskListVisibilityChange?: (filters: RouteTaskListVisibilityFilters) => void;
-  onImport: (completedIds: string[], todoIds: string[]) => boolean;
+  onImport: (completedIds: string[], todoIds: string[], replaceTodos: boolean) => boolean;
   canRevert: boolean;
   onRevert: () => void;
   // â”€â”€ Task summary props â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -150,7 +150,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
             onStatusChange={setImportStatus}
             canRevert={canRevert}
             onRevert={handleMobileRevert}
-            onImport={(completedIds, todoIds) => onImport(completedIds, todoIds)}
+            onImport={(completedIds, todoIds, replaceTodos) => onImport(completedIds, todoIds, replaceTodos)}
           />
         </div>
         )}

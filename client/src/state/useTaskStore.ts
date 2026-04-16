@@ -386,7 +386,7 @@ export function useTaskStore() {
    * Saves a snapshot of prior user state for single-level revert support.
    */
   const replaceFromPlugin = useCallback(
-    (completedIds: string[], todoIds: string[]) => {
+    (completedIds: string[], todoIds: string[], replaceTodos = true) => {
       const completedSet = new Set(completedIds);
       const todoSet = new Set(todoIds);
       setUserState((prev) => {
@@ -396,7 +396,8 @@ export function useTaskStore() {
         for (const task of tasks) {
           const current = prev.get(task.id);
           const shouldBeCompleted = completedSet.has(task.id);
-          const shouldBeTodo = todoSet.has(task.id);
+          // When replaceTodos is false, preserve the existing isTodo state unchanged.
+          const shouldBeTodo = replaceTodos ? todoSet.has(task.id) : (current?.isTodo ?? false);
           const currentCompleted = current?.completed ?? false;
           const currentTodo = current?.isTodo ?? false;
           if (currentCompleted !== shouldBeCompleted || currentTodo !== shouldBeTodo) {
@@ -434,12 +435,15 @@ export function useTaskStore() {
    * no change to the current user state (i.e., the import is a no-op).
    */
   const isNoOpImport = useCallback(
-    (completedIds: string[], todoIds: string[]): boolean => {
+    (completedIds: string[], todoIds: string[], replaceTodos = true): boolean => {
       const currentCompSet = new Set<string>();
       const currentTodoSet = new Set<string>();
       for (const [id, state] of userState) {
         if (state.completed) currentCompSet.add(id);
         if (state.isTodo) currentTodoSet.add(id);
+      }
+      if (!replaceTodos) {
+        return setsEqual(currentCompSet, new Set(completedIds));
       }
       return (
         setsEqual(currentCompSet, new Set(completedIds)) &&

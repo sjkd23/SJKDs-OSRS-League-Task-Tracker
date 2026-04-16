@@ -22,7 +22,7 @@ interface ImportButtonProps {
   canRevert: boolean;
   onRevert: () => void;
   /** Returns true if changes were applied; false if the import was a no-op. */
-  onImport: (completedIds: string[], todoIds: string[]) => boolean;
+  onImport: (completedIds: string[], todoIds: string[], replaceTodos: boolean) => boolean;
 }
 
 export function ImportButton({
@@ -146,7 +146,7 @@ export function ImportButton({
       return false;
     }
 
-    const changed = onImport(result.matchedCompleted, effectiveTodos);
+    const changed = onImport(result.matchedCompleted, effectiveTodos, importTracked);
     onStatusChange({
       type: 'success',
       completedCount: result.matchedCompleted.length,

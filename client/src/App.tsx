@@ -179,9 +179,9 @@ export default function App() {
   // Wrapper that detects no-op imports and skips replaceFromPlugin if nothing would change.
   // Returns true if changes were applied, false if the import was a no-op.
   const handleImportForButton = useCallback(
-    (completedIds: string[], todoIds: string[]): boolean => {
-      const noOp = isNoOpImport(completedIds, todoIds);
-      if (!noOp) replaceFromPlugin(completedIds, todoIds);
+    (completedIds: string[], todoIds: string[], replaceTodos: boolean): boolean => {
+      const noOp = isNoOpImport(completedIds, todoIds, replaceTodos);
+      if (!noOp) replaceFromPlugin(completedIds, todoIds, replaceTodos);
       return !noOp;
     },
     [isNoOpImport, replaceFromPlugin],
@@ -314,6 +314,7 @@ export default function App() {
           <div 
             onClick={handleToggleFilters}
             className="wiki-article !py-0 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm flex justify-between items-center h-12 px-4 shadow-sm cursor-pointer select-none group hover:bg-wiki-surface dark:hover:bg-wiki-surface-dark"
+            style={plannerWide && layoutMode !== 'mobile' ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
             aria-expanded={showFilters}
             aria-label="Toggle filters and import"
             role="button"
@@ -383,6 +384,7 @@ export default function App() {
             className={`wiki-article !mt-0 px-4 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm shadow-md overflow-y-auto max-h-[70vh] pointer-events-auto filter-panel-transition ${
               showFilters ? 'expanded py-3' : 'collapsed'
             }`}
+            style={plannerWide && layoutMode !== 'mobile' ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
           >
             <div className="wiki-filter-strip">
               <div className="flex flex-col lg:flex-row lg:items-start">

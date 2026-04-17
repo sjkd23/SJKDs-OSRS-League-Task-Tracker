@@ -26,11 +26,18 @@ export interface ScraperTask {
    */
   area: string | null;
   /**
-   * Broad task category, e.g. "Combat", "Skill", "Quest".
-   * May be null when not set in the game cache (common in transitional League 6 data).
-   * Normalised to "Other" by mapScraperTask when null.
+   * Broad task category. In older scraper output this is a string (e.g. "Combat", "Skill",
+   * "Quest") or null. In League 6+ scraper output this is a numeric enum value — use the
+   * companion `categoryName` string field when present.
+   * Normalised to "Other" by mapScraperTask when null or unresolvable.
    */
-  category: string | null;
+  category: string | number | null;
+  /**
+   * Human-readable category name corresponding to the numeric `category` enum.
+   * Present in League 6+ scraper output, e.g. "Skill", "Combat", "Quest".
+   * Takes precedence over numeric `category` in mapScraperTask.
+   */
+  categoryName?: string;
   /**
    * League skill category, e.g. "All", "Combat", "Artisan", "Gathering",
    * "Support", "Unlocked". May be null when not set in the game cache.

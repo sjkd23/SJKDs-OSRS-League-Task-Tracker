@@ -123,9 +123,10 @@ export function mapScraperTask(raw: ScraperTask): AppTask {
     area: raw.area ?? 'Unknown',
     name: cleanWikiGarbage(raw.name),
     description: cleanWikiGarbage(raw.description),
-    // category can be null in transitional League 6 data — normalise to 'Other'
-    category: raw.category ?? 'Other',
-    uiCategory: deriveUICategory(raw.name, raw.category ?? 'Other'),
+    // category may be a string, a numeric enum, or null — resolve to a string via
+    // categoryName (League 6+ scraper) or the raw value if already a string, else 'Other'
+    category: resolveCategory(raw),
+    uiCategory: deriveUICategory(raw.name, resolveCategory(raw)),
     // null means the same as "All" in the league data — no specific skill tier
     skill: raw.skill ?? 'All',
     tier,
@@ -175,6 +176,18 @@ function resolveTier(raw: ScraperTask): Tier {
   }
   // Fall back to the numeric tier field
   return TIER_BY_NUMBER[raw.tier] ?? 'Easy';
+}
+
+/**
+ * Resolve the category field to a display string.
+ * League 6+ scraper output uses a numeric enum for `category` with a companion
+ * `categoryName` string — prefer the string name when available.
+ * Falls back to the raw string value, or 'Other' when null/unresolvable.
+ */
+function resolveCategory(raw: ScraperTask): string {
+  if (raw.categoryName && typeof raw.categoryName === 'string') return raw.categoryName;
+  if (raw.category != null && typeof raw.category === 'string') return raw.category;
+  return 'Other';
 }
 
 /**

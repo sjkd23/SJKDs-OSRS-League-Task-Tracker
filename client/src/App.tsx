@@ -379,41 +379,45 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sticky Filters + Import Panel (combined) */}
-          <div
-            className={`wiki-article !mt-0 px-4 !border-t-0 !border-x-0 bg-opacity-95 backdrop-blur-sm shadow-md overflow-y-auto max-h-[70vh] pointer-events-auto filter-panel-transition ${
-              showFilters ? 'expanded py-3' : 'collapsed'
-            }`}
-            style={plannerWide ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
-          >
-            <div className="wiki-filter-strip">
-              <div className="flex flex-col lg:flex-row lg:items-start">
-                <div className="flex-1 min-w-0 lg:pr-4">
-                  <TaskFiltersBar
-                    tasks={tasks}
-                    filters={filters}
-                    onChange={setFilters}
-                    mode={appMode}
-                    routeTaskListVisibility={routeTaskListVisibility}
-                    onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
-                  />
+          {/* Sticky Filters + Import Panel — two-layer animation */}
+          {/* Outer: layout-height container for ResizeObserver. Height jumps instantly    */}
+          {/* (no duration) so only ONE measurement fires per toggle, not one per frame.  */}
+          {/* The collapse-to-zero is delayed 0.18s so layout shrinks after content hides.*/}
+          {/* Inner: GPU-composited clip-path + opacity — zero main-thread work per frame. */}
+          <div className={`filter-panel-outer ${showFilters ? 'expanded' : 'collapsed'}`}>
+            <div
+              className="wiki-article !mt-0 px-4 py-3 !border-t-0 !border-x-0 bg-opacity-95 shadow-md overflow-y-auto max-h-[70vh] filter-panel-inner"
+              style={plannerWide ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
+            >
+              <div className="wiki-filter-strip">
+                <div className="flex flex-col lg:flex-row lg:items-start">
+                  <div className="flex-1 min-w-0 lg:pr-4">
+                    <TaskFiltersBar
+                      tasks={tasks}
+                      filters={filters}
+                      onChange={setFilters}
+                      mode={appMode}
+                      routeTaskListVisibility={routeTaskListVisibility}
+                      onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
+                    />
+                  </div>
+                  {appMode !== 'planner' && (
+                  <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">
+                    <ImportButton
+                      tasks={tasks}
+                      pasteValue={importPaste}
+                      onPasteChange={setImportPaste}
+                      importTracked={importTracked}
+                      onImportTrackedChange={setImportTracked}
+                      status={importStatus}
+                      onStatusChange={setImportStatus}
+                      canRevert={canRevert}
+                      onRevert={handleRevert}
+                      onImport={handleImportForButton}
+                    />
+                  </div>
+                  )}
                 </div>
-                {appMode !== 'planner' && (
-                <div className="flex-shrink-0 lg:w-72 border-t border-wiki-border dark:border-wiki-border-dark lg:border-t-0 lg:border-l pt-3 lg:pt-0 lg:pl-4 mt-3 lg:mt-0">
-                  <ImportButton
-                    tasks={tasks}
-                    pasteValue={importPaste}
-                    onPasteChange={setImportPaste}
-                    importTracked={importTracked}
-                    onImportTrackedChange={setImportTracked}
-                    status={importStatus}
-                    onStatusChange={setImportStatus}
-                    canRevert={canRevert}
-                    onRevert={handleRevert}
-                    onImport={handleImportForButton}
-                  />
-                </div>
-                )}
               </div>
             </div>
           </div>

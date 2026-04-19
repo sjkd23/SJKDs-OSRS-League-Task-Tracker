@@ -279,24 +279,44 @@
   }
 }
 
-/* ── Filter Transition ────────────────────────────────────────────────── */
-.filter-panel-transition {
-  transition: max-height 0.25s ease-in-out, opacity 0.2s ease-in-out, padding 0.25s ease-in-out;
-  overflow-y: hidden;
+/* ── Filter Panel Animation ───────────────────────────────────────────── */
+/* Two-layer approach to eliminate per-frame layout/ResizeObserver cost:   */
+/*                                                                          */
+/* OUTER (.filter-panel-outer): owns layout height so the ResizeObserver   */
+/*   on the sticky header measures the correct total height. Height changes */
+/*   are instant (transition-duration: 0s) — the browser only recalculates */
+/*   layout once per toggle, not once per animation frame. The collapse-to- */
+/*   zero is delayed by 0.18s so space collapses only after content has     */
+/*   already disappeared via the inner animation.                           */
+/*                                                                          */
+/* INNER (.filter-panel-inner): compositor-only animation. clip-path and   */
+/*   opacity are animated on the GPU layer created by will-change, so zero  */
+/*   main-thread layout or paint work happens per frame. clip-path: inset() */
+/*   clips from the bottom, creating a downward-reveal / upward-collapse    */
+/*   effect without any layout change.                                      */
+
+.filter-panel-outer {
+  overflow: hidden;
 }
 
-.filter-panel-transition.collapsed {
-  max-height: 0 !important;
-  opacity: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-    border-width: 0 !important;
-    pointer-events: none;
-  }
+.filter-panel-outer.collapsed {
+  height: 0;
+  /* Delay layout collapse until inner clip-path animation finishes */
+  transition: height 0s 0.18s;
+}
+/* Expanded state is the browser default (height: auto) — no rule needed. */
 
-.filter-panel-transition.expanded {
-  max-height: 800px;
-  opacity: 1 !important;
+.filter-panel-inner {
+  will-change: clip-path, opacity;
+  transition: clip-path 0.18s ease-in-out, opacity 0.18s ease-in-out;
+  clip-path: inset(0 0 0% 0);
+  opacity: 1;
+}
+
+.filter-panel-outer.collapsed .filter-panel-inner {
+  clip-path: inset(0 0 100% 0);
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ── Shared Header Transition ────────────────────────────────────────── */

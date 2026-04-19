@@ -1,4 +1,4 @@
-import { memo, forwardRef } from 'react';
+import { memo } from 'react';
 import type { TaskView } from '@/types/task';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
 import { RichText } from '@/components/RichText/RichText';
@@ -31,10 +31,8 @@ export function completionTierClass(pct: number): string {
 
 export interface TaskRowProps {
   task: TaskView;
-  /** Stable 0-based position of this task in the current filtered list.
-   *  Used to determine stripe colour (even index → alt/darker row).
-   *  Must come from virtualRow.index, NOT from CSS nth-child, so that
-   *  the virtualizer padding spacer row cannot corrupt row parity. */
+  /** 0-based position of this task in the current filtered/sorted list.
+   *  Used to determine row stripe colour (even index → alt/darker row). */
   rowIndex: number;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
@@ -44,8 +42,6 @@ export interface TaskRowProps {
   isInRoute?: boolean;
   /** Called when the user clicks the Add-to-route button. Phase 1+. */
   onAddToRoute?: (id: string) => void;
-  /** Passed through to the <tr> so the window virtualizer can measure actual row height. */
-  'data-index'?: number;
 }
 
 /** Returns true when a requirements string is effectively empty / not applicable. */
@@ -54,7 +50,7 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(forwardRef<HTMLTableRowElement, TaskRowProps>(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute, 'data-index': dataIndex }: TaskRowProps, ref) {
+export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
@@ -84,8 +80,7 @@ export const TaskRow = memo(forwardRef<HTMLTableRowElement, TaskRowProps>(functi
     }
   }
 
-  // Even-indexed rows (0, 2, 4 …) get the alt/slightly-darker stripe to preserve
-  // the same visual rhythm as the old :nth-child(odd) rule (child 1 = index 0).
+  // Even-indexed rows (0, 2, 4 …) get the alt/slightly-darker stripe.
   const stripeClass = rowIndex % 2 === 0 ? 'row-alt' : '';
 
   // Visual state precedence: completed (green) > in-route (yellow) > addable (clickable) > default
@@ -108,8 +103,6 @@ export const TaskRow = memo(forwardRef<HTMLTableRowElement, TaskRowProps>(functi
 
   return (
     <tr
-      ref={ref}
-      data-index={dataIndex}
       className={[stateClass, stripeClass].filter(Boolean).join(' ')}
       onClick={handleRowClick}
       onKeyDown={handleKeyDown}
@@ -248,5 +241,5 @@ export const TaskRow = memo(forwardRef<HTMLTableRowElement, TaskRowProps>(functi
       )}
     </tr>
   );
-}));
+});
 

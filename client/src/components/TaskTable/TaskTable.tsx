@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { TaskView, SortConfig, SortField } from '@/types/task';
 import { TaskRow } from '@/components/TaskRow/TaskRow';
@@ -61,6 +61,67 @@ export function TaskTable({
   const totalSize = rowVirtualizer.getTotalSize();
   const scrollMargin = rowVirtualizer.options.scrollMargin ?? 0;
 
+  // Keep a stable ref so the ResizeObserver closure always reaches the current
+  // virtualizer instance without needing to re-register the observer on each render.
+  const virtualizerRef = useRef(rowVirtualizer);
+  virtualizerRef.current = rowVirtualizer;
+
+  // Reset all cached row measurements whenever the task list changes identity.
+  // After a filter or sort change the items at each virtual index are different;
+  // stale sizes from the previous list make getTotalSize() return a wrong value,
+  // which causes the scroll thumb to jump while new items are being measured.
+  // measure() clears the cache so remeasurement happens as rows enter the viewport.
+  useEffect(() => {
+    rowVirtualizer.measure();
+    // rowVirtualizer is a stable Virtualizer instance — omitting it from deps is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks]);
+
+  // Reset cached measurements when the table container's rendered width changes.
+  // Row heights depend on text wrapping, which changes when width changes (e.g. window
+  // resize, side-panel open/close).  We watch width only — height is a downstream
+  // consequence of measurement, not a cause, so reacting to it would loop.
+  // A requestAnimationFrame debounce coalesces rapid resize bursts into one reset.
+  useEffect(() => {
+    const el = tableWrapperRef.current;
+    if (!el) return;
+    let lastWidth = el.getBoundingClientRect().width;
+    let rafId = 0;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
+      if (Math.abs(w - lastWidth) > 1) {
+        lastWidth = w;
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+          virtualizerRef.current.measure();
+        });
+      }
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(rafId);
+    };
+    // tableWrapperRef and virtualizerRef are stable refs — empty deps is correct.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Stable total-size for paddingBottom ─────────────────────────────────────
+  // Root cause of thumb drag-lag: measureElement fires for each newly-visible
+  // <tr>, and when its actual height differs from the 38px estimate, getTotalSize()
+  // changes. That change flows into paddingBottom → document.scrollHeight changes →
+  // the browser repositions the thumb to re-anchor to the new height → the thumb
+  // slips back from the user's cursor during a drag.
+  //
+  // Fix: stableTotalSizeRef is frozen while rowVirtualizer.isScrolling is true.
+  // The real totalSize is adopted once the virtualizer marks scroll as settled
+  // (150 ms after the last scroll event). During that window paddingBottom does
+  // not change so document.scrollHeight stays constant and the thumb tracks 1:1.
+  const stableTotalSizeRef = useRef(totalSize);
+  if (!rowVirtualizer.isScrolling) {
+    stableTotalSizeRef.current = totalSize;
+  }
+
   // Padding rows fill the space above/below the rendered window so the scrollbar
   // represents the true full list height. This is the correct approach for real
   // <table> elements where position:absolute rows break layout.
@@ -70,7 +131,7 @@ export function TaskTable({
       : 0;
   const paddingBottom =
     virtualRows.length > 0
-      ? Math.max(0, totalSize - virtualRows[virtualRows.length - 1].end)
+      ? Math.max(0, stableTotalSizeRef.current - virtualRows[virtualRows.length - 1].end)
       : 0;
 
   return (
@@ -134,6 +195,8 @@ export function TaskTable({
               {virtualRows.map((virtualRow) => (
                 <TaskRow
                   key={virtualRow.key}
+                  ref={rowVirtualizer.measureElement as React.Ref<HTMLTableRowElement>}
+                  data-index={virtualRow.index}
                   task={tasks[virtualRow.index]}
                   rowIndex={virtualRow.index}
                   onToggleCompleted={onToggleCompleted}

@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, forwardRef } from 'react';
 import type { TaskView } from '@/types/task';
 import { WikiIcon } from '@/components/WikiIcon/WikiIcon';
 import { RichText } from '@/components/RichText/RichText';
@@ -44,6 +44,8 @@ export interface TaskRowProps {
   isInRoute?: boolean;
   /** Called when the user clicks the Add-to-route button. Phase 1+. */
   onAddToRoute?: (id: string) => void;
+  /** Passed through to the <tr> so the window virtualizer can measure actual row height. */
+  'data-index'?: number;
 }
 
 /** Returns true when a requirements string is effectively empty / not applicable. */
@@ -52,7 +54,7 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute }: TaskRowProps) {
+export const TaskRow = memo(forwardRef<HTMLTableRowElement, TaskRowProps>(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute, 'data-index': dataIndex }: TaskRowProps, ref) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
@@ -106,6 +108,8 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
 
   return (
     <tr
+      ref={ref}
+      data-index={dataIndex}
       className={[stateClass, stripeClass].filter(Boolean).join(' ')}
       onClick={handleRowClick}
       onKeyDown={handleKeyDown}
@@ -244,5 +248,5 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
       )}
     </tr>
   );
-});
+}));
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, memo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, memo, useCallback, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { useTaskStore } from '@/state/useTaskStore';
 import { useRouteStore, isMeaningfulRoute } from '@/state/useRouteStore';
@@ -92,6 +92,33 @@ export default function App() {
   const [appMode, setAppMode] = useState<'tracker' | 'planner'>(() =>
     new URLSearchParams(window.location.search).has('r') ? 'planner' : 'tracker',
   );
+
+  // ── Keep-alive: track which modes have been visited so their UI trees ─────
+  // stay mounted after the first visit (hidden instead of unmounted).
+  const [visitedTracker, setVisitedTracker] = useState(
+    () => !new URLSearchParams(window.location.search).has('r'),
+  );
+  const [visitedPlanner, setVisitedPlanner] = useState(
+    () => new URLSearchParams(window.location.search).has('r'),
+  );
+
+  /**
+   * Switches app mode, marks the target mode as visited, and wraps the whole
+   * update in startTransition so React treats it as a non-urgent render.
+   * The To-do filter is reset when entering the planner (it has no meaning there).
+   */
+  const switchMode = useCallback((mode: 'tracker' | 'planner') => {
+    startTransition(() => {
+      setAppMode(mode);
+      if (mode === 'tracker') {
+        setVisitedTracker(true);
+      } else {
+        setVisitedPlanner(true);
+        setFilters((prev) => (prev.showTodoOnly ? { ...prev, showTodoOnly: false } : prev));
+      }
+    });
+  }, [setFilters]);
+
   const [plannerWide, setPlannerWide] = useState(() =>
     loadFromStorage<boolean>('osrs-lt:planner-wide', false),
   );
@@ -247,9 +274,6 @@ export default function App() {
       return true;
     });
   }, [visibleTasks, taskIdsInRoute, routeTaskListVisibility]);
-
-  // taskIdsInRoute is forwarded to the table/card components for yellow planner-row state styling.
-  const displayTasks = appMode === 'planner' ? plannerDisplayTasks : visibleTasks;
 
   /**
    * Scroll-preserving wrapper for addTaskToRoute used by the lower task list in
@@ -435,11 +459,7 @@ export default function App() {
           {(['tracker', 'planner'] as const).map((m) => (
             <button
               key={m}
-              onClick={() => {
-                setAppMode(m);
-                // Reset To-do filter when entering planner — it has no meaning there.
-                if (m === 'planner') setFilters((prev) => prev.showTodoOnly ? { ...prev, showTodoOnly: false } : prev);
-              }}
+              onClick={() => switchMode(m)}
               className={[
                 'px-4 py-1.5 text-[13px] transition-colors select-none',
                 appMode === m
@@ -463,7 +483,7 @@ export default function App() {
                 <p className="mt-1.5 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
                   ←{' '}
                   <button
-                    onClick={() => setAppMode('tracker')}
+                    onClick={() => switchMode('tracker')}
                     className="text-wiki-link dark:text-wiki-link-dark hover:underline font-medium"
                   >
                     Back to Task Tracker
@@ -488,7 +508,7 @@ export default function App() {
                 <p className="mt-2 text-[12px] text-wiki-muted dark:text-wiki-muted-dark">
                   Planning your run?{' '}
                   <button
-                    onClick={() => setAppMode('planner')}
+                    onClick={() => switchMode('planner')}
                     className="text-wiki-link dark:text-wiki-link-dark hover:underline font-medium"
                   >
                     Try the Route Planner →
@@ -611,17 +631,20 @@ export default function App() {
         )}
 
         {/* ── Task table ─────────────────────────────────────────────────── */}
-        {/* In tracker mode the task table stays inside this wiki-article. */}
-        {appMode !== 'planner' && (
-          <main className="mt-3 pb-6">
-            {/* Route Planner panel — shown above list only in planner mode after load */}
+        {/* In tracker mode the task table stays inside this wiki-article.   */}
+        {/* Keep-alive: render once visited; hide instead of unmounting.      */}
+        {visitedTracker && (
+          <main
+            className={`mt-3 pb-6${appMode === 'planner' ? ' hidden' : ''}`}
+            aria-hidden={appMode === 'planner' ? true : undefined}
+          >
             {loading ? (
               <div className="text-center py-16 text-wiki-muted dark:text-wiki-muted-dark text-[13px] italic">
                 Loading task list…
               </div>
             ) : layoutMode === 'mobile' ? (
               <MemoizedMobileTaskList
-                tasks={displayTasks}
+                tasks={visibleTasks}
                 sort={sort}
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
@@ -631,7 +654,7 @@ export default function App() {
               />
             ) : (
               <MemoizedTaskTable
-                tasks={displayTasks}
+                tasks={visibleTasks}
                 sort={sort}
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
@@ -643,7 +666,8 @@ export default function App() {
           </main>
         )}
 
-        {/* In planner mode, the route planner sits inside this wiki-article. */}
+        {/* In planner mode, the route planner sits inside this wiki-article.     */}
+        {/* Save-error banner is mode-independent — always conditionally rendered. */}
         {showSaveError && (
           <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
             <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
@@ -659,69 +683,77 @@ export default function App() {
             </button>
           </div>
         )}
-        {appMode === 'planner' && pendingSharedRoute !== null && (
-          <div className="mt-3 px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/50 text-[12.5px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
-            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-500 dark:text-amber-400" aria-hidden="true">
-              <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
-            </svg>
-            <span className="flex-1">
-              A shared route was found (<strong>{pendingSharedRoute.name || 'Unnamed route'}</strong>).
-              {' '}Loading it will replace your current route.
-            </span>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => { replaceRoute(pendingSharedRoute); setPendingSharedRoute(null); }}
-                className="px-2 py-0.5 text-[11.5px] font-medium bg-wiki-link dark:bg-wiki-link-dark text-white rounded hover:opacity-90 transition-opacity"
-              >
-                Load Shared Route
-              </button>
-              <button
-                onClick={() => setPendingSharedRoute(null)}
-                className="px-2 py-0.5 text-[11.5px] font-medium text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
-              >
-                Keep My Route
-              </button>
-            </div>
-          </div>
-        )}
-        {appMode === 'planner' && sharedRouteError && (
-          <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
-            <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
-              <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
-            </svg>
-            <span className="flex-1"><strong>Shared link error:</strong> {sharedRouteError}</span>
-            <button
-              onClick={() => setSharedRouteError(null)}
-              className="flex-shrink-0 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
-              aria-label="Dismiss"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-        {appMode === 'planner' && !loading && (
-          <div id="route-planner" className="mt-3 pb-3">
-            <RoutePlannerPanel
-              route={route}
-              filters={filters}
-              isRunMode={isRunMode}
-              setIsRunMode={setIsRunMode}
-              allTasks={allTaskViews}
-              structIdMappings={structIdMappings}
-              onUpdateRouteName={updateRouteName}
-              onRemoveTask={removeTaskFromRoute}
-              onReorderSections={reorderSections}
-              onResetRoute={resetRoute}
-              onReplaceRoute={replaceRoute}
-              onAddCustomTask={addCustomTask}
-              onEditCustomTask={editCustomTask}
-              onAddSection={addSection}
-              onRenameSection={renameSection}
-              onRemoveSection={removeSection}
-              onSetRouteItemLocation={setRouteItemLocation}
-              onMoveItem={moveItem}
-              onToggleItemRunComplete={toggleItemRunComplete}
-            />
+        {/* Planner panel keep-alive: render once visited; hide instead of unmounting. */}
+        {visitedPlanner && (
+          <div
+            className={appMode !== 'planner' ? 'hidden' : ''}
+            aria-hidden={appMode !== 'planner' ? true : undefined}
+          >
+            {pendingSharedRoute !== null && (
+              <div className="mt-3 px-3 py-2.5 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/50 text-[12.5px] text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-500 dark:text-amber-400" aria-hidden="true">
+                  <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+                </svg>
+                <span className="flex-1">
+                  A shared route was found (<strong>{pendingSharedRoute.name || 'Unnamed route'}</strong>).
+                  {' '}Loading it will replace your current route.
+                </span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => { replaceRoute(pendingSharedRoute); setPendingSharedRoute(null); }}
+                    className="px-2 py-0.5 text-[11.5px] font-medium bg-wiki-link dark:bg-wiki-link-dark text-white rounded hover:opacity-90 transition-opacity"
+                  >
+                    Load Shared Route
+                  </button>
+                  <button
+                    onClick={() => setPendingSharedRoute(null)}
+                    className="px-2 py-0.5 text-[11.5px] font-medium text-wiki-muted dark:text-wiki-muted-dark hover:text-wiki-text dark:hover:text-wiki-text-dark transition-colors"
+                  >
+                    Keep My Route
+                  </button>
+                </div>
+              </div>
+            )}
+            {sharedRouteError && (
+              <div className="mt-3 px-3 py-2 bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-[12.5px] text-red-700 dark:text-red-400 flex items-start gap-2">
+                <svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3 flex-shrink-0 mt-0.5" aria-hidden="true">
+                  <path d="M6 0a6 6 0 1 0 0 12A6 6 0 0 0 6 0zm.75 8.5h-1.5v-1.5h1.5v1.5zm0-3h-1.5v-3h1.5v3z"/>
+                </svg>
+                <span className="flex-1"><strong>Shared link error:</strong> {sharedRouteError}</span>
+                <button
+                  onClick={() => setSharedRouteError(null)}
+                  className="flex-shrink-0 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {!loading && (
+              <div id="route-planner" className="mt-3 pb-3">
+                <RoutePlannerPanel
+                  route={route}
+                  filters={filters}
+                  isRunMode={isRunMode}
+                  setIsRunMode={setIsRunMode}
+                  allTasks={allTaskViews}
+                  structIdMappings={structIdMappings}
+                  onUpdateRouteName={updateRouteName}
+                  onRemoveTask={removeTaskFromRoute}
+                  onReorderSections={reorderSections}
+                  onResetRoute={resetRoute}
+                  onReplaceRoute={replaceRoute}
+                  onAddCustomTask={addCustomTask}
+                  onEditCustomTask={editCustomTask}
+                  onAddSection={addSection}
+                  onRenameSection={renameSection}
+                  onRemoveSection={removeSection}
+                  onSetRouteItemLocation={setRouteItemLocation}
+                  onMoveItem={moveItem}
+                  onToggleItemRunComplete={toggleItemRunComplete}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -730,10 +762,12 @@ export default function App() {
       {/* Root cause of the old gap not working: planner and tasks shared one        */}
       {/* wiki-article surface. Closing that article and starting a new one below    */}
       {/* lets the bg-wiki-bg of the outer container show through as a real gap.     */}
-      {appMode === 'planner' && (
+      {/* Keep-alive: render once visited; hide instead of unmounting.               */}
+      {visitedPlanner && (
         <div
-          className="wiki-article mt-4"
+          className={`wiki-article mt-4${appMode !== 'planner' ? ' hidden' : ''}`}
           id="task-list"
+          aria-hidden={appMode !== 'planner' ? true : undefined}
           style={plannerWide && layoutMode !== 'mobile' ? { width: 'min(99vw, 99%)', maxWidth: 'none' } : undefined}
         >
           <div className="py-2 border-b border-wiki-border dark:border-wiki-border-dark flex items-center gap-3">
@@ -751,7 +785,7 @@ export default function App() {
               </div>
             ) : layoutMode === 'mobile' ? (
               <MemoizedMobileTaskList
-                tasks={displayTasks}
+                tasks={plannerDisplayTasks}
                 sort={sort}
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
@@ -762,7 +796,7 @@ export default function App() {
               />
             ) : (
               <MemoizedTaskTable
-                tasks={displayTasks}
+                tasks={plannerDisplayTasks}
                 sort={sort}
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}

@@ -209,6 +209,16 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({
           <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
             <input
               type="checkbox"
+              checked={filters.hideIgnored}
+              onChange={(e) => set('hideIgnored', e.target.checked)}
+              className="w-4 h-4 rounded border-wiki-border dark:border-wiki-border-dark accent-wiki-link dark:accent-wiki-link-dark cursor-pointer transition-transform group-active:scale-90"
+            />
+            Hide ignored
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none text-[13px] font-medium text-wiki-text dark:text-wiki-text-dark group">
+            <input
+              type="checkbox"
               checked={filters.showCompleted}
               disabled={filters.showOnlyCompleted}
               onChange={(e) => set('showCompleted', e.target.checked)}

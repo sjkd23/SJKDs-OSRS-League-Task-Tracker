@@ -124,11 +124,13 @@ export interface AppTask {
 export interface TaskUserState {
   completed: boolean;
   isTodo: boolean;
+  isIgnored: boolean;
 }
 
 export const DEFAULT_USER_STATE: Readonly<TaskUserState> = {
   completed: false,
   isTodo: false,
+  isIgnored: false,
 };
 
 /**
@@ -154,6 +156,8 @@ export interface TaskFilters {
   showOnlyCompleted: boolean;
   showTodoOnly: boolean;
   applyFilterToRoute: boolean;
+  /** When true, ignored tasks are excluded from the visible list entirely. Default: true. */
+  hideIgnored: boolean;
 }
 
 // ─── Sort State ───────────────────────────────────────────────────────────────

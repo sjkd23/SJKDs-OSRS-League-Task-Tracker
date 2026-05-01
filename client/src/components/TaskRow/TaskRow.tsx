@@ -36,6 +36,7 @@ export interface TaskRowProps {
   rowIndex: number;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  onToggleIgnored: (id: string) => void;
   // ── Route Planner props (unused in tracker mode) ─────────────────
   mode?: 'tracker' | 'planner';
   /** Whether this task already exists in the active route. */
@@ -50,7 +51,7 @@ function isNaRequirements(text: string | undefined): boolean {
   return !t || t === 'N/A' || t === '\u2014' || t === '-';
 }
 
-export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, mode = 'tracker', isInRoute = false, onAddToRoute }: TaskRowProps) {
+export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted, onToggleTodo, onToggleIgnored, mode = 'tracker', isInRoute = false, onAddToRoute }: TaskRowProps) {
   const regionIcon = regionIconUrl(task.area);
   const regionColor = REGION_COLOUR[task.area];
   const reqIsNa = isNaRequirements(task.requirementsText);
@@ -83,8 +84,12 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
   // Even-indexed rows (0, 2, 4 …) get the alt/slightly-darker stripe.
   const stripeClass = rowIndex % 2 === 0 ? 'row-alt' : '';
 
-  // Visual state precedence: completed (green) > in-route (yellow) > addable (clickable) > default
-  const stateClass = task.completed
+  // Visual state precedence: ignored (red) > completed (green) > in-route (yellow) > default
+  // When hideIgnored is on, ignored tasks are filtered out entirely, so this class only
+  // fires when the user has disabled Hide ignored and the row is visible.
+  const stateClass = task.isIgnored
+    ? 'task-ignored'
+    : task.completed
     ? 'task-completed'
     : isPlanner
     ? isInRoute ? 'task-in-route' : 'task-addable'
@@ -239,6 +244,38 @@ export const TaskRow = memo(function TaskRow({ task, rowIndex, onToggleCompleted
           </button>
         </td>
       )}
+
+      {/* Ignore cell — always shown in both tracker and planner modes */}
+      <td className="p-0 align-middle">
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleIgnored(task.id); }}
+          title={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+          aria-label={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+          aria-pressed={task.isIgnored}
+          className={[
+            'w-full flex items-center justify-center py-2 transition-colors',
+            task.isIgnored
+              ? 'text-red-600 dark:text-red-400 bg-red-100/60 dark:bg-red-900/20'
+              : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-red-500 dark:hover:text-red-400',
+          ].join(' ')}
+        >
+          {/* Eye-slash icon */}
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="w-[18px] h-[18px]"
+            aria-hidden="true"
+          >
+            <path d="M2 8C3.5 5 5.5 3.5 8 3.5s4.5 1.5 6 4.5c-1.5 3-3.5 4.5-6 4.5S3.5 11 2 8Z" />
+            <circle cx="8" cy="8" r="1.8" fill={task.isIgnored ? 'currentColor' : 'none'} />
+            <line x1="2.5" y1="2.5" x2="13.5" y2="13.5" />
+          </svg>
+        </button>
+      </td>
     </tr>
   );
 });

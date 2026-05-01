@@ -13,6 +13,8 @@ export function filterTasks(tasks: TaskView[], filters: TaskFilters): TaskView[]
   const searchQuery = filters.searchQuery.trim().toLowerCase();
 
   return tasks.filter((task) => {
+    // Hide ignored tasks first — when enabled, hidden means hidden even if search/filters match.
+    if (filters.hideIgnored && task.isIgnored) return false;
     if (filters.tiers.length > 0 && !filters.tiers.includes(task.tier)) return false;
     if (filters.skills.length > 0) {
       // Match against the real per-task skill requirements, not the broad scraper category.

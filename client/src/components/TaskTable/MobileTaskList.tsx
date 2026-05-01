@@ -19,6 +19,7 @@ interface MobileTaskListProps {
   onSortChange: (field: SortField) => void;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  onToggleIgnored: (id: string) => void;
   // ── Route Planner additions ────────────────────────────────────────────
   mode?: 'tracker' | 'planner';
   taskIdsInRoute?: Set<string>;
@@ -35,6 +36,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
   task,
   onToggleCompleted,
   onToggleTodo,
+  onToggleIgnored,
   mode = 'tracker',
   isInRoute = false,
   onAddToRoute,
@@ -42,6 +44,7 @@ const MobileTaskCard = memo(function MobileTaskCard({
   task: TaskView;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  onToggleIgnored: (id: string) => void;
   mode?: 'tracker' | 'planner';
   isInRoute?: boolean;
   onAddToRoute?: (id: string) => void;
@@ -52,8 +55,10 @@ const MobileTaskCard = memo(function MobileTaskCard({
   const areaUrl = regionWikiUrl(task.area);
   const isPlanner = mode === 'planner';
 
-  // Visual state precedence: completed (green) > in-route (yellow) > default
-  const cardBgClass = task.completed
+  // Visual state precedence: ignored (red) > completed (green) > in-route (yellow) > default
+  const cardBgClass = task.isIgnored
+    ? 'bg-[#f5d0d0] text-[#6b2a2a] dark:bg-[#2b1010] dark:text-[#d47070] border-[#e8b8b8] dark:border-[#4a1818]'
+    : task.completed
     ? 'bg-[#c8e8c8] text-[#4a6b4a] dark:bg-[#182b18] dark:text-[#7aaa7a] border-[#b8ddb8] dark:border-[#1e3620]'
     : isInRoute && isPlanner
     ? 'bg-[#f5e8a0] text-[#5a4a00] dark:bg-[#302800] dark:text-[#d4b84a] border-[#e8d880] dark:border-[#483800]'
@@ -194,16 +199,36 @@ const MobileTaskCard = memo(function MobileTaskCard({
       {/* ACTIONS */}
       <div className="flex items-stretch divide-x divide-wiki-border dark:divide-wiki-border-dark/50 border-t border-wiki-border dark:border-wiki-border-dark/50">
         {mode === 'planner' ? (
-          // Route Planner: status indicator at the bottom. The whole card is the clickable target.
-          <div className="flex-1 py-2.5 text-center text-[12px] font-medium select-none">
-            {isInRoute ? (
-              <span className="text-[#5a4a00] dark:text-[#d4b84a]">✓ In Route</span>
+          // Route Planner: status indicator + ignore button. The card body is the clickable target.
+          <>
+            <div className="flex-1 py-2.5 text-center text-[12px] font-medium select-none">
+              {isInRoute ? (
+                <span className="text-[#5a4a00] dark:text-[#d4b84a]">✓ In Route</span>
             ) : (
               <span className="text-wiki-muted dark:text-wiki-muted-dark">Tap to add to route</span>
             )}
           </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleIgnored(task.id); }}
+              title={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+              aria-label={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+              aria-pressed={task.isIgnored}
+              className={[
+                'flex items-center justify-center px-4 py-2.5 text-[12px] font-medium transition-colors touch-manipulation',
+                task.isIgnored
+                  ? 'text-red-600 dark:text-red-400 bg-red-100/40 dark:bg-red-900/20'
+                  : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5',
+              ].join(' ')}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]" aria-hidden="true">
+                <path d="M2 8C3.5 5 5.5 3.5 8 3.5s4.5 1.5 6 4.5c-1.5 3-3.5 4.5-6 4.5S3.5 11 2 8Z" />
+                <circle cx="8" cy="8" r="1.8" fill={task.isIgnored ? 'currentColor' : 'none'} />
+                <line x1="2.5" y1="2.5" x2="13.5" y2="13.5" />
+              </svg>
+            </button>
+          </>
         ) : (
-          // Task Tracker: normal complete + to-do actions
+          // Task Tracker: normal complete + to-do + ignore actions
           <>
             <button
               onClick={() => onToggleCompleted(task.id)}
@@ -228,6 +253,24 @@ const MobileTaskCard = memo(function MobileTaskCard({
             >
               {task.isTodo ? '★ Pinned' : '☆ To-do'}
             </button>
+            <button
+              onClick={() => onToggleIgnored(task.id)}
+              title={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+              aria-label={task.isIgnored ? 'Unignore task' : 'Ignore task'}
+              aria-pressed={task.isIgnored}
+              className={[
+                'flex items-center justify-center px-4 py-3 transition-colors touch-manipulation',
+                task.isIgnored
+                  ? 'text-red-600 dark:text-red-400 bg-red-100/40 dark:bg-red-900/20'
+                  : 'text-wiki-muted dark:text-wiki-muted-dark hover:text-red-500 dark:hover:text-red-400 hover:bg-black/5 dark:hover:bg-white/5',
+              ].join(' ')}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]" aria-hidden="true">
+                <path d="M2 8C3.5 5 5.5 3.5 8 3.5s4.5 1.5 6 4.5c-1.5 3-3.5 4.5-6 4.5S3.5 11 2 8Z" />
+                <circle cx="8" cy="8" r="1.8" fill={task.isIgnored ? 'currentColor' : 'none'} />
+                <line x1="2.5" y1="2.5" x2="13.5" y2="13.5" />
+              </svg>
+            </button>
           </>
         )}
       </div>
@@ -241,6 +284,7 @@ export function MobileTaskList({
   // onSortChange,
   onToggleCompleted,
   onToggleTodo,
+  onToggleIgnored,
   mode = 'tracker',
   taskIdsInRoute,
   onAddToRoute,
@@ -311,6 +355,7 @@ export function MobileTaskList({
                 task={tasks[virtualRow.index]}
                 onToggleCompleted={onToggleCompleted}
                 onToggleTodo={onToggleTodo}
+                onToggleIgnored={onToggleIgnored}
                 mode={mode}
                 isInRoute={taskIdsInRoute?.has(tasks[virtualRow.index].id)}
                 onAddToRoute={onAddToRoute}

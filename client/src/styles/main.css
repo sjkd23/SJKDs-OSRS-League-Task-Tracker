@@ -120,6 +120,45 @@
     filter: brightness(1.12);
   }
 
+  /* ── Ignored row (visible when Hide ignored is disabled) ────────────────── */
+  /* Red tint with highest visual priority — overrides completed green,        */
+  /* in-route yellow, and stripe colours. Completed state still shows via      */
+  /* text/icons inside cells; only the background/text colour changes here.    */
+  .wikitable tbody tr.task-ignored {
+    background-color: #f0d0d0 !important;
+    color: #6b2a2a;
+    filter: none !important;
+  }
+  .dark .wikitable tbody tr.task-ignored {
+    background-color: #2b1010 !important;
+    color: #d47070;
+    filter: none !important;
+  }
+  .wikitable tbody tr.task-ignored td {
+    opacity: 0.85;
+  }
+  .wikitable tbody tr.task-ignored:hover {
+    background-color: #e8c0c0 !important;
+    opacity: 1;
+  }
+  .dark .wikitable tbody tr.task-ignored:hover {
+    background-color: #3a1414 !important;
+    opacity: 1;
+  }
+  /* Keep req-na-cell in sync with the ignored row colour */
+  .wikitable tbody tr.task-ignored .req-na-cell {
+    background-color: #f0d0d0 !important;
+  }
+  .dark .wikitable tbody tr.task-ignored .req-na-cell {
+    background-color: #2b1010 !important;
+  }
+  .wikitable tbody tr.task-ignored:hover .req-na-cell {
+    background-color: #e8c0c0 !important;
+  }
+  .dark .wikitable tbody tr.task-ignored:hover .req-na-cell {
+    background-color: #3a1414 !important;
+  }
+
   /* ── Completed row ─────────────────────────────────────────────────────── */
   /* Overrides the alternating stripe rows with a soft green tint.            */
   /* !important needed to beat the equal specificity of .row-alt / base tr.   */

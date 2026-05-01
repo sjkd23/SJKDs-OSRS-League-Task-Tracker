@@ -25,6 +25,7 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 const STORAGE_KEYS = {
   completed: 'osrs-lt:completed',
   todos: 'osrs-lt:todos',
+  ignored: 'osrs-lt:ignored',
 } as const;
 
 /**
@@ -46,6 +47,7 @@ function hydrateUserState(tasks: AppTask[]): Map<string, TaskUserState> {
 
   const rawCompleted = loadFromStorage<string[]>(STORAGE_KEYS.completed, []);
   const rawTodos    = loadFromStorage<string[]>(STORAGE_KEYS.todos,     []);
+  const rawIgnored  = loadFromStorage<string[]>(STORAGE_KEYS.ignored,   []);
 
   /**
    * Remap a single stored task ID to its current counterpart.
@@ -64,6 +66,7 @@ function hydrateUserState(tasks: AppTask[]): Map<string, TaskUserState> {
   let anythingRemapped = false;
   const completedIds: string[] = [];
   const todoIds: string[] = [];
+  const ignoredIds: string[] = [];
 
   for (const raw of rawCompleted) {
     const current = remapId(raw);
@@ -83,21 +86,33 @@ function hydrateUserState(tasks: AppTask[]): Map<string, TaskUserState> {
       anythingRemapped = true; // dropped entry
     }
   }
+  for (const raw of rawIgnored) {
+    const current = remapId(raw);
+    if (current) {
+      ignoredIds.push(current);
+      if (current !== raw) anythingRemapped = true;
+    } else {
+      anythingRemapped = true; // dropped entry
+    }
+  }
 
   // Persist remapped IDs so subsequent loads don't need to remap again.
   if (anythingRemapped) {
     saveToStorage(STORAGE_KEYS.completed, completedIds);
     saveToStorage(STORAGE_KEYS.todos,    todoIds);
+    saveToStorage(STORAGE_KEYS.ignored,  ignoredIds);
   }
 
   const completed = new Set(completedIds);
   const todos     = new Set(todoIds);
+  const ignored   = new Set(ignoredIds);
 
   const map = new Map<string, TaskUserState>();
-  for (const id of new Set([...completed, ...todos])) {
+  for (const id of new Set([...completed, ...todos, ...ignored])) {
     map.set(id, {
-      completed: completed.has(id),
-      isTodo:    todos.has(id),
+      completed:  completed.has(id),
+      isTodo:     todos.has(id),
+      isIgnored:  ignored.has(id),
     });
   }
   return map;
@@ -113,6 +128,10 @@ function persistUserState(userState: Map<string, TaskUserState>): void {
     STORAGE_KEYS.todos,
     entries.filter(([, s]) => s.isTodo).map(([id]) => id),
   );
+  saveToStorage(
+    STORAGE_KEYS.ignored,
+    entries.filter(([, s]) => s.isIgnored).map(([id]) => id),
+  );
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
@@ -120,6 +139,7 @@ function persistUserState(userState: Map<string, TaskUserState>): void {
 const EMPTY_USER_STATE: TaskUserState = {
   completed: false,
   isTodo: false,
+  isIgnored: false,
 };
 
 const DEFAULT_FILTERS: TaskFilters = {
@@ -132,6 +152,7 @@ const DEFAULT_FILTERS: TaskFilters = {
   showOnlyCompleted: false,
   showTodoOnly: false,
   applyFilterToRoute: false,
+  hideIgnored: true,
 };
 
 const DEFAULT_SORT: SortConfig = {
@@ -329,6 +350,14 @@ export function useTaskStore() {
     [userState, patchUserState],
   );
 
+  const toggleIgnored = useCallback(
+    (id: string) => {
+      const current = userState.get(id) ?? EMPTY_USER_STATE;
+      patchUserState(id, { isIgnored: !current.isIgnored });
+    },
+    [userState, patchUserState],
+  );
+
   /**
    * Mark a batch of task IDs as completed. IDs that are already completed
    * are left unchanged. Persists to localStorage after the update.
@@ -404,6 +433,7 @@ export function useTaskStore() {
             next.set(task.id, {
               completed: shouldBeCompleted,
               isTodo: shouldBeTodo,
+              isIgnored: current?.isIgnored ?? false,
             });
           }
         }
@@ -477,6 +507,7 @@ export function useTaskStore() {
     setSort,
     toggleCompleted,
     toggleTodo,
+    toggleIgnored,
     importCompleted,
     replaceCompleted,
     replaceFromPlugin,

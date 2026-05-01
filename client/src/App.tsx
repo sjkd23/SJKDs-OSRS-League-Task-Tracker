@@ -29,7 +29,7 @@ export default function App() {
     loading, tasks, allTaskViews, visibleTasks,
     visiblePointsTotal, visiblePointsExcludingCompleted, totalAcquiredPoints, totalCompletedCount,
     filters, sort, setFilters, setSort,
-    toggleCompleted, toggleTodo, replaceFromPlugin, isNoOpImport, canRevert, revertImport,
+    toggleCompleted, toggleTodo, toggleIgnored, replaceFromPlugin, isNoOpImport, canRevert, revertImport,
     structIdMappings,
   } = useTaskStore();
   const { theme, toggleTheme } = useTheme();
@@ -649,6 +649,7 @@ export default function App() {
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
+                onToggleIgnored={toggleIgnored}
                 mode={appMode}
                 onAddToRoute={addTaskToRouteWithSnap}
               />
@@ -659,6 +660,7 @@ export default function App() {
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
+                onToggleIgnored={toggleIgnored}
                 mode={appMode}
                 onAddToRoute={addTaskToRouteWithSnap}
               />
@@ -790,6 +792,7 @@ export default function App() {
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
+                onToggleIgnored={toggleIgnored}
                 mode={appMode}
                 taskIdsInRoute={taskIdsInRoute}
                 onAddToRoute={addTaskToRoutePreservingScroll}
@@ -801,6 +804,7 @@ export default function App() {
                 onSortChange={handleSortChange}
                 onToggleCompleted={toggleCompleted}
                 onToggleTodo={toggleTodo}
+                onToggleIgnored={toggleIgnored}
                 mode={appMode}
                 taskIdsInRoute={taskIdsInRoute}
                 onAddToRoute={addTaskToRoutePreservingScroll}

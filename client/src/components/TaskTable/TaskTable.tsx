@@ -26,6 +26,7 @@ interface TaskTableProps {
   onSortChange: (field: SortField) => void;
   onToggleCompleted: (id: string) => void;
   onToggleTodo: (id: string) => void;
+  onToggleIgnored: (id: string) => void;
   // ── Route Planner additions ────────────────────────────────────────────
   mode?: 'tracker' | 'planner';
   taskIdsInRoute?: Set<string>;
@@ -38,6 +39,7 @@ export function TaskTable({
   onSortChange,
   onToggleCompleted,
   onToggleTodo,
+  onToggleIgnored,
   mode = 'tracker',
   taskIdsInRoute,
   onAddToRoute,
@@ -76,12 +78,20 @@ export function TaskTable({
                 </th>
               );
             })}
+            {/* Ignore column — always shown, not sortable */}
+            <th
+              style={{ top: 'var(--sticky-offset, 0px)' }}
+              className="sticky z-20 bg-wiki-surface dark:bg-wiki-surface-dark border-b border-wiki-border dark:border-wiki-border-dark shadow-[0_1px_0_rgba(0,0,0,0.05)] px-2 py-2 font-semibold whitespace-nowrap text-center w-20"
+            >
+              Ignore
+            </th>
           </tr>
         </thead>
         <tbody>
           {(() => {
             // In planner mode the To-do column is hidden, reducing column count by 1.
-            const colCount = mode === 'planner' ? COLUMNS.length - 1 : COLUMNS.length;
+            // +1 always for the Ignore column.
+            const colCount = (mode === 'planner' ? COLUMNS.length - 1 : COLUMNS.length) + 1;
             return tasks.length === 0 ? (
               <tr>
                 <td
@@ -103,6 +113,7 @@ export function TaskTable({
                     rowIndex={index}
                     onToggleCompleted={onToggleCompleted}
                     onToggleTodo={onToggleTodo}
+                    onToggleIgnored={onToggleIgnored}
                     mode={mode}
                     isInRoute={taskIdsInRoute?.has(task.id)}
                     onAddToRoute={onAddToRoute}

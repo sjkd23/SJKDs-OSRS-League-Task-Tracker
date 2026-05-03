@@ -433,6 +433,7 @@ export default function App() {
                       mode={appMode}
                       routeTaskListVisibility={routeTaskListVisibility}
                       onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
+                      loading={loading}
                     />
                   </div>
                   {appMode !== 'planner' && (
@@ -617,6 +618,7 @@ export default function App() {
                     mode={appMode}
                     routeTaskListVisibility={routeTaskListVisibility}
                     onRouteTaskListVisibilityChange={setRouteTaskListVisibility}
+                    loading={loading}
                   />
                 </div>
                 {appMode !== 'planner' && (

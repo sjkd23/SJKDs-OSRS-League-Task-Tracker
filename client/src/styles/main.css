@@ -287,6 +287,9 @@
     @apply cursor-pointer select-none transition-colors;
     @apply hover:border-wiki-link dark:hover:border-wiki-link-dark;
     @apply hover:text-wiki-link dark:hover:text-wiki-link-dark;
+    /* Stable height prevents layout shift when icon images load in */
+    min-height: 30px;
+    box-sizing: border-box;
   }
 
   .filter-toggle-btn--active {

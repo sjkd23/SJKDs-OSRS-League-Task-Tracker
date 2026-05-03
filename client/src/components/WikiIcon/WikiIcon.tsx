@@ -13,6 +13,13 @@ interface WikiIconProps {
    * caller's surrounding text already provides context).
    */
   fallbackColor?: string;
+  /**
+   * Image loading strategy. Defaults to 'eager' so filter-bar icons (always
+   * in the viewport) load immediately without any lazy-fetch delay.
+   * Pass 'lazy' explicitly for below-the-fold icons where deferred loading
+   * is genuinely beneficial.
+   */
+  loading?: 'eager' | 'lazy';
 }
 
 /**
@@ -22,7 +29,7 @@ interface WikiIconProps {
  * first two characters of `alt` when `fallbackColor` is provided, or nothing
  * if it isn't.
  */
-export function WikiIcon({ src, alt, className = '', fallbackColor }: WikiIconProps) {
+export function WikiIcon({ src, alt, className = '', fallbackColor, loading = 'eager' }: WikiIconProps) {
   // An empty src will never load — skip straight to the fallback state
   const [failed, setFailed] = useState(!src);
 
@@ -53,8 +60,7 @@ export function WikiIcon({ src, alt, className = '', fallbackColor }: WikiIconPr
       title={alt}
       className={`inline-block align-middle object-contain ${className}`}
       onError={() => setFailed(true)}
-      loading="lazy"
-      decoding="async"
+      loading={loading}
     />
   );
 }

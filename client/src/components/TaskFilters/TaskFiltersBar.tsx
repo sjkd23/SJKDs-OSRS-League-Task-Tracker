@@ -23,6 +23,12 @@ interface TaskFiltersBarProps {
   mode?: 'tracker' | 'planner';
   routeTaskListVisibility?: RouteTaskListVisibilityFilters;
   onRouteTaskListVisibilityChange?: (filters: RouteTaskListVisibilityFilters) => void;
+  /**
+   * When true, task data is still loading. Area and Skill rows (which are
+   * derived from task data) are replaced with stable placeholder rows so the
+   * filter panel layout does not shift once data arrives.
+   */
+  loading?: boolean;
 }
 
 export const TaskFiltersBar = memo(function TaskFiltersBar({
@@ -32,6 +38,7 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({
   mode = 'tracker',
   routeTaskListVisibility,
   onRouteTaskListVisibilityChange,
+  loading = false,
 }: TaskFiltersBarProps) {
   const areas = useMemo(() => uniqueAreas(tasks), [tasks]);
   const skills = useMemo(() => uniqueSkillsFromRequirements(tasks), [tasks]);
@@ -119,46 +126,68 @@ export const TaskFiltersBar = memo(function TaskFiltersBar({
           }}
         />
 
-        {/* Area — icon only */}
-        <FilterToggleGroup<string>
-          label="Area"
-          options={areas}
-          selected={filters.areas}
-          onChange={(areas) => set('areas', areas)}
-          getOptionTitle={(area) => area}
-          renderOption={(area) => {
-            const iconPath = regionIconUrl(area);
-            const color = REGION_COLOUR[area];
-            return (
-              <WikiIcon
-                src={iconPath ?? ''}
-                alt={area}
-                className={regionIconClass(area, 'filter')}
-                fallbackColor={color}
-              />
-            );
-          }}
-        />
+        {/* Area — icon only. Placeholder row while task data loads to prevent layout shift. */}
+        {loading ? (
+          <div className="flex items-start gap-2 min-w-0 min-h-[30px]">
+            <span className="w-20 flex-shrink-0 text-[11px] font-semibold uppercase tracking-wide text-wiki-muted dark:text-wiki-muted-dark pt-[3px]">
+              Area
+            </span>
+            <span className="text-[12px] text-wiki-muted dark:text-wiki-muted-dark opacity-40 pt-[5px] select-none">
+              Loading…
+            </span>
+          </div>
+        ) : (
+          <FilterToggleGroup<string>
+            label="Area"
+            options={areas}
+            selected={filters.areas}
+            onChange={(areas) => set('areas', areas)}
+            getOptionTitle={(area) => area}
+            renderOption={(area) => {
+              const iconPath = regionIconUrl(area);
+              const color = REGION_COLOUR[area];
+              return (
+                <WikiIcon
+                  src={iconPath ?? ''}
+                  alt={area}
+                  className={regionIconClass(area, 'filter')}
+                  fallbackColor={color}
+                />
+              );
+            }}
+          />
+        )}
 
-        {/* Skill — icon only */}
-        <FilterToggleGroup<string>
-          label="Skill"
-          options={skills}
-          selected={filters.skills}
-          onChange={(skills) => set('skills', skills)}
-          getOptionTitle={(skill) => skill}
-          renderOption={(skill) => {
-            const iconPath = skillIconUrl(skill);
-            return (
-              <WikiIcon
-                src={iconPath ?? ''}
-                alt={skill}
-                className="w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0"
-                fallbackColor={SKILL_FALLBACK_COLOUR}
-              />
-            );
-          }}
-        />
+        {/* Skill — icon only. Placeholder row while task data loads to prevent layout shift. */}
+        {loading ? (
+          <div className="flex items-start gap-2 min-w-0 min-h-[30px]">
+            <span className="w-20 flex-shrink-0 text-[11px] font-semibold uppercase tracking-wide text-wiki-muted dark:text-wiki-muted-dark pt-[3px]">
+              Skill
+            </span>
+            <span className="text-[12px] text-wiki-muted dark:text-wiki-muted-dark opacity-40 pt-[5px] select-none">
+              Loading…
+            </span>
+          </div>
+        ) : (
+          <FilterToggleGroup<string>
+            label="Skill"
+            options={skills}
+            selected={filters.skills}
+            onChange={(skills) => set('skills', skills)}
+            getOptionTitle={(skill) => skill}
+            renderOption={(skill) => {
+              const iconPath = skillIconUrl(skill);
+              return (
+                <WikiIcon
+                  src={iconPath ?? ''}
+                  alt={skill}
+                  className="w-[24px] h-[24px] md:w-[26px] md:h-[26px] flex-shrink-0"
+                  fallbackColor={SKILL_FALLBACK_COLOUR}
+                />
+              );
+            }}
+          />
+        )}
 
         {/* Category — icon only (with tooltip), matching Area/Skill style */}
         <FilterToggleGroup<string>

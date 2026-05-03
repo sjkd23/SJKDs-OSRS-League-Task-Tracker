@@ -136,6 +136,7 @@ export const MobileFilterSortBar = memo(function MobileFilterSortBar({
           mode={mode}
           routeTaskListVisibility={routeTaskListVisibility}
           onRouteTaskListVisibilityChange={onRouteTaskListVisibilityChange}
+          loading={summaryLoading}
         />
         {/* â”€â”€ Import section â€” tracker mode only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {mode !== 'planner' && (

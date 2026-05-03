@@ -9,7 +9,13 @@ import type {
 import type { ScraperTask } from '@/types/scraperTask';
 import { mapScraperTasks } from '@/lib/mapScraperTask';
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
-import { filterTasks, sortTasks } from '@/utils/taskFilters';
+import { filterTasks, sortTasks, uniqueSkillsFromRequirements, uniqueAreas } from '@/utils/taskFilters';
+import {
+  getPersistedTaskFilters,
+  getPersistedSort,
+  saveTaskFilterState,
+  sanitizeTaskFiltersAgainstAvailableOptions,
+} from '@/utils/filterStateStorage';
 import { loadFromStorage, saveToStorage } from '@/utils/storage';
 
 // ─── Utilities ───────────────────────────────────────────────────────────────
@@ -268,8 +274,35 @@ export function useTaskStore() {
       });
   }, []);
 
-  const [filters, setFilters] = useState<TaskFilters>(DEFAULT_FILTERS);
-  const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT);
+  const [filters, setFilters] = useState<TaskFilters>(() => getPersistedTaskFilters(DEFAULT_FILTERS));
+  const [sort, setSort] = useState<SortConfig>(() => getPersistedSort(DEFAULT_SORT));
+
+  // ── Persist filter/sort state on change ─────────────────────────────────
+  useEffect(() => {
+    saveTaskFilterState(filters, sort);
+  }, [filters, sort]);
+
+  // ── Sanitize persisted filter values against loaded task data ────────────
+  // Runs once after tasks finish loading to prune stale options (e.g. from
+  // a previous league season).  Uses the setState updater pattern so React
+  // bails out automatically when nothing changed (same object reference).
+  const filtersSanitized = useRef(false);
+  useEffect(() => {
+    if (tasks.length === 0 || filtersSanitized.current) return;
+    filtersSanitized.current = true;
+    const validTiers = new Set(tasks.map((t) => t.tier));
+    const validSkills = new Set(uniqueSkillsFromRequirements(tasks));
+    const validAreas = new Set(uniqueAreas(tasks));
+    const validCategories = new Set(tasks.map((t) => t.uiCategory));
+    setFilters((current) =>
+      sanitizeTaskFiltersAgainstAvailableOptions(current, {
+        tiers: validTiers,
+        skills: validSkills,
+        areas: validAreas,
+        categories: validCategories,
+      }),
+    );
+  }, [tasks]);
 
   // ── Merge content + user state for rendering ────────────────────────────
 

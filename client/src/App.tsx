@@ -17,12 +17,18 @@ import type { RouteTaskListVisibilityFilters } from '@/components/TaskFilters/Ta
 import { CURRENT_LEAGUE } from '@/lib/leagueConfig';
 import { getShareParam, decodeSharedRoute, clearShareParam, isShortShareId, loadSharedRouteFromApi } from '@/utils/routeShare';
 import { loadFromStorage, saveToStorage, storageErrorEvent } from '@/utils/storage';
+import { getPersistedRouteTaskListVisibility, savePlannerFilterState } from '@/utils/filterStateStorage';
 import type { SortField } from '@/types/task';
 import type { Route } from '@/types/route';
 
 // Memoize TaskTable to prevent rerenders when только showFilters changes
 const MemoizedTaskTable = memo(TaskTable);
 const MemoizedMobileTaskList = memo(MobileTaskList);
+
+const DEFAULT_ROUTE_TASK_LIST_VISIBILITY: RouteTaskListVisibilityFilters = {
+  showTasksInRoute: true,
+  showOnlyTasksInRoute: false,
+};
 
 export default function App() {
   const {
@@ -122,10 +128,9 @@ export default function App() {
   const [plannerWide, setPlannerWide] = useState(() =>
     loadFromStorage<boolean>('osrs-lt:planner-wide', false),
   );
-  const [routeTaskListVisibility, setRouteTaskListVisibility] = useState<RouteTaskListVisibilityFilters>({
-    showTasksInRoute: true,
-    showOnlyTasksInRoute: false,
-  });
+  const [routeTaskListVisibility, setRouteTaskListVisibility] = useState<RouteTaskListVisibilityFilters>(
+    () => getPersistedRouteTaskListVisibility(DEFAULT_ROUTE_TASK_LIST_VISIBILITY),
+  );
   const togglePlannerWide = useCallback(() => {
     setPlannerWide((w) => {
       const next = !w;
@@ -188,6 +193,11 @@ export default function App() {
     storageErrorEvent.addEventListener('save-failed', handleSaveFailed);
     return () => storageErrorEvent.removeEventListener('save-failed', handleSaveFailed);
   }, []);
+
+  // ── Persist planner route-list visibility on change ───────────────────────
+  useEffect(() => {
+    savePlannerFilterState(routeTaskListVisibility);
+  }, [routeTaskListVisibility]);
 
   // ── Interaction State ───────────────────────────────────────────────
   const [showFilters, setShowFilters] = useState(true);
